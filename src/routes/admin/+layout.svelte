@@ -12,6 +12,9 @@
 		</a>
 		<nav>
 			<a href={resolve('/admin')}>▦ <span>Trang chia sẻ</span></a>
+			{#if data.user?.role === 'admin'}
+				<a href={resolve('/admin/users')}>♙ <span>Người dùng</span></a>
+			{/if}
 			<a href={resolve('/')} target="_blank" rel="noreferrer">↗ <span>Xem trang chính</span></a>
 		</nav>
 		<div class="admin-user">

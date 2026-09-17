@@ -15,15 +15,18 @@ import {
 export const pageStatus = pgEnum('page_status', ['draft', 'published']);
 export const blockType = pgEnum('block_type', ['link', 'heading', 'text', 'divider']);
 export const backgroundType = pgEnum('background_type', ['color', 'gradient', 'image']);
-export const userRole = pgEnum('user_role', ['admin']);
+export const userRole = pgEnum('user_role', ['admin', 'editor']);
 
 export const users = pgTable(
 	'users',
 	{
 		id: uuid('id').defaultRandom().primaryKey(),
+		displayName: text('display_name'),
 		email: text('email').notNull(),
 		passwordHash: text('password_hash').notNull(),
 		role: userRole('role').notNull().default('admin'),
+		isActive: boolean('is_active').notNull().default(true),
+		lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()

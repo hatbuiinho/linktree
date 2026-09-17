@@ -4,6 +4,128 @@
 	import PublicPage from '$lib/components/PublicPage.svelte';
 	import { uploadImage } from '$lib/uploads/client';
 
+	type BackgroundType = 'color' | 'gradient' | 'image';
+
+	const palette = [
+		'#ffffff',
+		'#f8fafc',
+		'#eff6ff',
+		'#ecfdf5',
+		'#fefce8',
+		'#fff7ed',
+		'#fdf2f8',
+		'#0f172a'
+	];
+	const gradientDirections = [
+		{ label: '↓', value: '180deg', name: 'Từ trên xuống' },
+		{ label: '↘', value: '135deg', name: 'Chéo xuống phải' },
+		{ label: '→', value: '90deg', name: 'Từ trái sang phải' }
+	];
+	const radiusOptions = [
+		{ label: 'Vuông', value: 0 },
+		{ label: 'Bo nhẹ', value: 10 },
+		{ label: 'Bo tròn', value: 22 },
+		{ label: 'Viên thuốc', value: 999 }
+	];
+	const fontOptions = [
+		{
+			label: 'Hiện đại',
+			sample: 'Gọn gàng, hiện đại',
+			value: 'Inter, ui-sans-serif, system-ui, sans-serif'
+		},
+		{
+			label: 'Dễ đọc',
+			sample: 'Rõ ràng, thân thiện',
+			value: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+		},
+		{ label: 'Thanh lịch', sample: 'Mềm mại, tinh tế', value: 'Georgia, "Times New Roman", serif' },
+		{
+			label: 'Trang trọng',
+			sample: 'Cổ điển, trang nghiêm',
+			value: '"Palatino Linotype", Palatino, Georgia, serif'
+		}
+	];
+	const themePresets = [
+		{
+			id: 'light',
+			name: 'Sáng',
+			description: 'Sạch và nhẹ nhàng',
+			previewBackground: '#f8fafc',
+			backgroundType: 'color' as const,
+			backgroundValue: '#f8fafc',
+			buttonColor: '#93c5fd',
+			buttonTextColor: '#172554',
+			textColor: '#172554',
+			buttonRadius: 999,
+			fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif'
+		},
+		{
+			id: 'calm-blue',
+			name: 'Xanh dịu',
+			description: 'Mát và thân thiện',
+			previewBackground: 'linear-gradient(135deg, #eff6ff, #dcfce7)',
+			backgroundType: 'gradient' as const,
+			backgroundValue: 'linear-gradient(135deg, #eff6ff, #dcfce7)',
+			buttonColor: '#2563eb',
+			buttonTextColor: '#ffffff',
+			textColor: '#172554',
+			buttonRadius: 22,
+			fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif'
+		},
+		{
+			id: 'ceremonial',
+			name: 'Trang nghiêm',
+			description: 'Ấm và trang trọng',
+			previewBackground: 'linear-gradient(180deg, #fefce8, #fff7ed)',
+			backgroundType: 'gradient' as const,
+			backgroundValue: 'linear-gradient(180deg, #fefce8, #fff7ed)',
+			buttonColor: '#92400e',
+			buttonTextColor: '#ffffff',
+			textColor: '#451a03',
+			buttonRadius: 10,
+			fontFamily: 'Georgia, "Times New Roman", serif'
+		},
+		{
+			id: 'minimal',
+			name: 'Tối giản',
+			description: 'Trắng và tinh gọn',
+			previewBackground: '#ffffff',
+			backgroundType: 'color' as const,
+			backgroundValue: '#ffffff',
+			buttonColor: '#f1f5f9',
+			buttonTextColor: '#0f172a',
+			textColor: '#0f172a',
+			buttonRadius: 10,
+			fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+		},
+		{
+			id: 'dark',
+			name: 'Tối',
+			description: 'Tương phản rõ nét',
+			previewBackground: '#0f172a',
+			backgroundType: 'color' as const,
+			backgroundValue: '#0f172a',
+			buttonColor: '#334155',
+			buttonTextColor: '#ffffff',
+			textColor: '#f8fafc',
+			buttonRadius: 22,
+			fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif'
+		},
+		{
+			id: 'warm',
+			name: 'Ấm áp',
+			description: 'Nhẹ nhàng, gần gũi',
+			previewBackground: 'linear-gradient(135deg, #fff7ed, #fdf2f8)',
+			backgroundType: 'gradient' as const,
+			backgroundValue: 'linear-gradient(135deg, #fff7ed, #fdf2f8)',
+			buttonColor: '#be185d',
+			buttonTextColor: '#ffffff',
+			textColor: '#831843',
+			buttonRadius: 999,
+			fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+		}
+	];
+
 	let { data, form } = $props();
 	// svelte-ignore state_referenced_locally
 	let page = $state({ ...data.page });
@@ -31,6 +153,12 @@
 	let uploadingKind = $state<'logo' | 'background' | null>(null);
 	let imageUploadMessage = $state('');
 	let imageUploadError = $state('');
+	let solidBackground = $state('#ffffff');
+	let gradientColor1 = $state('#eff6ff');
+	let gradientColor2 = $state('#dcfce7');
+	let gradientDirection = $state('135deg');
+	let backgroundImageUrl = $state('');
+	let backgroundFileInput = $state<HTMLInputElement>();
 
 	let previewData = $derived({ page, theme, blocks });
 	let publicPath = $derived(page.isHome ? '/' : `/p/${page.slug}`);
@@ -38,9 +166,74 @@
 
 	$effect(() => {
 		page = { ...data.page };
-		if (data.theme) theme = { ...data.theme };
+		if (data.theme) {
+			theme = { ...data.theme };
+			syncBackgroundControls(data.theme.backgroundType, data.theme.backgroundValue);
+		}
 		blocks = data.blocks.map((block) => ({ ...block }));
 	});
+
+	function syncBackgroundControls(type: BackgroundType, value: string) {
+		if (type === 'color' && /^#[0-9a-f]{6}$/i.test(value)) solidBackground = value;
+		if (type === 'image') backgroundImageUrl = value;
+
+		if (type === 'gradient') {
+			const match = value.match(
+				/^linear-gradient\(\s*([^,]+),\s*(#[0-9a-f]{6})\s*,\s*(#[0-9a-f]{6})\s*\)$/i
+			);
+			if (match) {
+				gradientDirection = match[1].trim();
+				gradientColor1 = match[2];
+				gradientColor2 = match[3];
+			}
+		}
+	}
+
+	function applyPreset(preset: (typeof themePresets)[number]) {
+		theme.backgroundType = preset.backgroundType;
+		theme.backgroundValue = preset.backgroundValue;
+		theme.buttonColor = preset.buttonColor;
+		theme.buttonTextColor = preset.buttonTextColor;
+		theme.textColor = preset.textColor;
+		theme.buttonRadius = preset.buttonRadius;
+		theme.fontFamily = preset.fontFamily;
+		syncBackgroundControls(preset.backgroundType, preset.backgroundValue);
+	}
+
+	function presetIsActive(preset: (typeof themePresets)[number]) {
+		return (
+			theme.backgroundType === preset.backgroundType &&
+			theme.backgroundValue === preset.backgroundValue &&
+			theme.buttonColor === preset.buttonColor &&
+			theme.buttonTextColor === preset.buttonTextColor &&
+			theme.textColor === preset.textColor &&
+			theme.buttonRadius === preset.buttonRadius &&
+			theme.fontFamily === preset.fontFamily
+		);
+	}
+
+	function setBackgroundType(type: BackgroundType) {
+		theme.backgroundType = type;
+		if (type === 'color') theme.backgroundValue = solidBackground;
+		if (type === 'gradient') applyGradient();
+		if (type === 'image') theme.backgroundValue = backgroundImageUrl;
+	}
+
+	function applySolidColor(color: string) {
+		solidBackground = color;
+		theme.backgroundType = 'color';
+		theme.backgroundValue = color;
+	}
+
+	function applyGradient() {
+		theme.backgroundType = 'gradient';
+		theme.backgroundValue = `linear-gradient(${gradientDirection}, ${gradientColor1}, ${gradientColor2})`;
+	}
+
+	function selectGradientDirection(direction: string) {
+		gradientDirection = direction;
+		applyGradient();
+	}
 
 	async function persistOrder() {
 		reorderStatus = 'Đang lưu thứ tự…';
@@ -66,16 +259,11 @@
 		await persistOrder();
 	}
 
-	async function handleImageUpload(event: SubmitEvent, kind: 'logo' | 'background') {
-		event.preventDefault();
-		const formElement = event.currentTarget as HTMLFormElement;
-		const input = formElement.elements.namedItem('file') as HTMLInputElement | null;
-		const file = input?.files?.[0];
-		if (!file) {
-			imageUploadError = 'Vui lòng chọn ảnh.';
-			return;
-		}
-
+	async function persistImage(
+		kind: 'logo' | 'background',
+		file: File,
+		input?: HTMLInputElement | null
+	) {
 		uploadingKind = kind;
 		imageUploadMessage = '';
 		imageUploadError = '';
@@ -91,6 +279,7 @@
 			if (kind === 'logo') {
 				page.logoUrl = url;
 			} else {
+				backgroundImageUrl = url;
 				theme.backgroundType = 'image';
 				theme.backgroundValue = url;
 			}
@@ -102,6 +291,26 @@
 		} finally {
 			uploadingKind = null;
 		}
+	}
+
+	async function handleImageUpload(event: SubmitEvent, kind: 'logo' | 'background') {
+		event.preventDefault();
+		const formElement = event.currentTarget as HTMLFormElement;
+		const input = formElement.elements.namedItem('file') as HTMLInputElement | null;
+		const file = input?.files?.[0];
+		if (!file) {
+			imageUploadError = 'Vui lòng chọn ảnh.';
+			return;
+		}
+
+		await persistImage(kind, file, input);
+	}
+
+	async function handleBackgroundFileChange(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		await persistImage('background', file, input);
 	}
 </script>
 
@@ -268,97 +477,261 @@
 					</form>
 				</div>
 			{:else}
-				<form method="POST" action="?/updateTheme" class="panel-card">
+				<form method="POST" action="?/updateTheme" class="panel-card appearance-card">
 					<div class="card-heading">
 						<div>
-							<h2>Theme</h2>
-							<p>Thay đổi được phản ánh ngay ở bản xem trước.</p>
+							<h2>Giao diện trang</h2>
+							<p>Chọn theo ý thích và xem kết quả ngay ở bản xem trước.</p>
 						</div>
-						<button class="primary">Lưu giao diện</button>
+						<button class="primary" type="submit">Lưu giao diện</button>
 					</div>
-					<div class="field-grid two">
-						<label
-							>Kiểu nền
-							<select name="backgroundType" bind:value={theme.backgroundType}
-								><option value="color">Màu</option><option value="gradient">Gradient</option><option
-									value="image">Ảnh</option
-								></select
-							>
-						</label>
-						<label
-							>Giá trị nền <input
-								name="backgroundValue"
-								bind:value={theme.backgroundValue}
-								placeholder="#ffffff hoặc linear-gradient(...)"
-							/></label
-						>
-						<label
-							>Màu nút <div class="color-field">
-								<input type="color" bind:value={theme.buttonColor} /><input
-									name="buttonColor"
-									bind:value={theme.buttonColor}
-								/>
-							</div></label
-						>
-						<label
-							>Màu chữ nút <div class="color-field">
-								<input type="color" bind:value={theme.buttonTextColor} /><input
-									name="buttonTextColor"
-									bind:value={theme.buttonTextColor}
-								/>
-							</div></label
-						>
-						<label
-							>Màu chữ chính <div class="color-field">
-								<input type="color" bind:value={theme.textColor} /><input
-									name="textColor"
-									bind:value={theme.textColor}
-								/>
-							</div></label
-						>
-						<label
-							>Bo góc nút ({theme.buttonRadius}px)
-							<input
-								name="buttonRadius"
-								type="range"
-								min="0"
-								max="999"
-								bind:value={theme.buttonRadius}
-							/></label
-						>
-					</div>
-					<label
-						>Font <input
-							name="fontFamily"
-							bind:value={theme.fontFamily}
-							placeholder="Inter, system-ui, sans-serif"
-						/></label
-					>
-				</form>
 
-				<div class="panel-card">
-					<div class="card-heading">
-						<div>
-							<h2>Ảnh nền</h2>
-							<p>Tải ảnh lên sẽ tự chuyển kiểu nền sang Image.</p>
+					<input type="hidden" name="backgroundType" value={theme.backgroundType} />
+					<input type="hidden" name="backgroundValue" value={theme.backgroundValue} />
+					<input type="hidden" name="buttonColor" value={theme.buttonColor} />
+					<input type="hidden" name="buttonTextColor" value={theme.buttonTextColor} />
+					<input type="hidden" name="textColor" value={theme.textColor} />
+					<input type="hidden" name="buttonRadius" value={theme.buttonRadius} />
+					<input type="hidden" name="fontFamily" value={theme.fontFamily} />
+
+					<section class="appearance-section first-section">
+						<div class="section-heading">
+							<h3>Phong cách có sẵn</h3>
+							<p>Chọn một mẫu làm điểm bắt đầu, sau đó chỉnh thêm nếu muốn.</p>
 						</div>
-					</div>
-					<form class="upload-row" onsubmit={(event) => handleImageUpload(event, 'background')}>
-						<input
-							name="file"
-							type="file"
-							accept="image/jpeg,image/png,image/webp,image/gif"
-							required
-						/>
-						<button disabled={uploadingKind !== null}
-							>{uploadingKind === 'background' ? 'Đang tải…' : 'Tải ảnh nền'}</button
-						>
-					</form>
-					{#if imageUploadError}<p class="upload-message error-text">{imageUploadError}</p>{/if}
-					{#if imageUploadMessage}<p class="upload-message success-text">
-							{imageUploadMessage}
-						</p>{/if}
-				</div>
+						<div class="preset-grid">
+							{#each themePresets as preset (preset.id)}
+								<button
+									type="button"
+									class="preset-card"
+									class:selected={presetIsActive(preset)}
+									aria-pressed={presetIsActive(preset)}
+									onclick={() => applyPreset(preset)}
+								>
+									<span class="preset-preview" style={`background: ${preset.previewBackground}`}>
+										<span style={`background: ${preset.buttonColor}`}></span>
+										<span style={`background: ${preset.buttonColor}`}></span>
+									</span>
+									<strong>{preset.name}</strong>
+									<small>{preset.description}</small>
+								</button>
+							{/each}
+						</div>
+					</section>
+
+					<section class="appearance-section">
+						<div class="section-heading">
+							<h3>Nền trang</h3>
+							<p>Dùng màu đơn, chuyển màu hoặc ảnh riêng của bạn.</p>
+						</div>
+
+						<div class="background-tabs" role="group" aria-label="Kiểu nền">
+							<button
+								type="button"
+								class:selected={theme.backgroundType === 'color'}
+								aria-pressed={theme.backgroundType === 'color'}
+								onclick={() => setBackgroundType('color')}>Màu đơn</button
+							>
+							<button
+								type="button"
+								class:selected={theme.backgroundType === 'gradient'}
+								aria-pressed={theme.backgroundType === 'gradient'}
+								onclick={() => setBackgroundType('gradient')}>Chuyển màu</button
+							>
+							<button
+								type="button"
+								class:selected={theme.backgroundType === 'image'}
+								aria-pressed={theme.backgroundType === 'image'}
+								onclick={() => setBackgroundType('image')}>Ảnh nền</button
+							>
+						</div>
+
+						{#if theme.backgroundType === 'color'}
+							<div class="background-controls">
+								<div class="palette" aria-label="Bảng màu nền">
+									{#each palette as color (color)}
+										<button
+											type="button"
+											class="swatch"
+											class:selected={theme.backgroundValue.toLowerCase() === color.toLowerCase()}
+											style={`background: ${color}`}
+											aria-label={`Chọn màu nền ${color}`}
+											aria-pressed={theme.backgroundValue.toLowerCase() === color.toLowerCase()}
+											onclick={() => applySolidColor(color)}
+										></button>
+									{/each}
+								</div>
+								<label class="visual-color-field">
+									<span>Màu tuỳ chọn</span>
+									<input
+										type="color"
+										value={solidBackground}
+										oninput={(event) => applySolidColor(event.currentTarget.value)}
+									/>
+								</label>
+							</div>
+						{:else if theme.backgroundType === 'gradient'}
+							<div class="gradient-controls">
+								<div class="gradient-colors">
+									<label class="visual-color-field">
+										<span>Màu 1</span>
+										<input
+											type="color"
+											value={gradientColor1}
+											oninput={(event) => {
+												gradientColor1 = event.currentTarget.value;
+												applyGradient();
+											}}
+										/>
+									</label>
+									<label class="visual-color-field">
+										<span>Màu 2</span>
+										<input
+											type="color"
+											value={gradientColor2}
+											oninput={(event) => {
+												gradientColor2 = event.currentTarget.value;
+												applyGradient();
+											}}
+										/>
+									</label>
+								</div>
+								<div class="direction-row">
+									<span>Hướng chuyển màu</span>
+									<div role="group" aria-label="Hướng chuyển màu">
+										{#each gradientDirections as direction (direction.value)}
+											<button
+												type="button"
+												class:selected={gradientDirection === direction.value}
+												aria-label={direction.name}
+												aria-pressed={gradientDirection === direction.value}
+												title={direction.name}
+												onclick={() => selectGradientDirection(direction.value)}
+												>{direction.label}</button
+											>
+										{/each}
+									</div>
+								</div>
+							</div>
+						{:else}
+							<div class="image-background-control">
+								{#if backgroundImageUrl}
+									<img src={backgroundImageUrl} alt="Ảnh nền hiện tại" />
+								{:else}
+									<div class="image-placeholder" aria-hidden="true">▧</div>
+								{/if}
+								<div>
+									<strong>{backgroundImageUrl ? 'Ảnh nền hiện tại' : 'Chưa có ảnh nền'}</strong>
+									<p>JPG, PNG, WEBP hoặc GIF · tối đa 8 MB.</p>
+									<input
+										class="hidden-file-input"
+										bind:this={backgroundFileInput}
+										type="file"
+										accept="image/jpeg,image/png,image/webp,image/gif"
+										onchange={handleBackgroundFileChange}
+									/>
+									<button
+										type="button"
+										class="image-upload-button"
+										disabled={uploadingKind !== null}
+										onclick={() => backgroundFileInput?.click()}
+										>{uploadingKind === 'background'
+											? 'Đang tải…'
+											: backgroundImageUrl
+												? 'Đổi ảnh'
+												: 'Chọn ảnh'}</button
+									>
+								</div>
+							</div>
+							{#if imageUploadError}<p class="upload-message error-text">{imageUploadError}</p>{/if}
+							{#if imageUploadMessage}<p class="upload-message success-text">
+									{imageUploadMessage}
+								</p>{/if}
+						{/if}
+					</section>
+
+					<section class="appearance-section">
+						<div class="section-heading">
+							<h3>Màu sắc</h3>
+							<p>Chọn màu cho các thành phần chính trên trang.</p>
+						</div>
+						<div class="color-choice-grid">
+							<label class="color-choice">
+								<span>Màu nút</span>
+								<input type="color" bind:value={theme.buttonColor} />
+							</label>
+							<label class="color-choice">
+								<span>Chữ trên nút</span>
+								<input type="color" bind:value={theme.buttonTextColor} />
+							</label>
+							<label class="color-choice">
+								<span>Chữ chính</span>
+								<input type="color" bind:value={theme.textColor} />
+							</label>
+						</div>
+					</section>
+
+					<section class="appearance-section">
+						<div class="section-heading">
+							<h3>Kiểu nút</h3>
+							<p>Chọn độ bo góc phù hợp với phong cách trang.</p>
+						</div>
+						<div class="radius-grid">
+							{#each radiusOptions as option (option.value)}
+								<button
+									type="button"
+									class="radius-option"
+									class:selected={theme.buttonRadius === option.value}
+									aria-pressed={theme.buttonRadius === option.value}
+									onclick={() => (theme.buttonRadius = option.value)}
+								>
+									<span class="radius-sample" style={`border-radius: ${option.value}px`}></span>
+									<strong>{option.label}</strong>
+								</button>
+							{/each}
+						</div>
+					</section>
+
+					<section class="appearance-section">
+						<div class="section-heading">
+							<h3>Kiểu chữ</h3>
+							<p>Chọn cảm giác chữ phù hợp với nội dung của trang.</p>
+						</div>
+						<div class="font-grid">
+							{#each fontOptions as font (font.value)}
+								<button
+									type="button"
+									class="font-option"
+									class:selected={theme.fontFamily === font.value}
+									aria-pressed={theme.fontFamily === font.value}
+									onclick={() => (theme.fontFamily = font.value)}
+								>
+									<span class="font-sample" style={`font-family: ${font.value}`}>Aa</span>
+									<span>
+										<strong>{font.label}</strong>
+										<small>{font.sample}</small>
+									</span>
+								</button>
+							{/each}
+						</div>
+					</section>
+
+					<details class="advanced-settings">
+						<summary>Tuỳ chỉnh nâng cao</summary>
+						<p>Dành cho trường hợp cần nhập chính xác mã màu hoặc CSS.</p>
+						<div class="field-grid two advanced-grid">
+							<label>Giá trị nền <input bind:value={theme.backgroundValue} /></label>
+							<label>Font family <input bind:value={theme.fontFamily} /></label>
+							<label>Màu nút <input bind:value={theme.buttonColor} /></label>
+							<label>Màu chữ nút <input bind:value={theme.buttonTextColor} /></label>
+							<label>Màu chữ chính <input bind:value={theme.textColor} /></label>
+							<label
+								>Bo góc (px)
+								<input type="number" min="0" max="999" bind:value={theme.buttonRadius} />
+							</label>
+						</div>
+					</details>
+				</form>
 
 				{#if !page.isHome}
 					<form method="POST" action="?/setHome" class="panel-card set-home">
@@ -711,15 +1084,380 @@
 		font-weight: 700;
 	}
 
-	.color-field {
+	.appearance-card {
+		padding-top: 0;
+	}
+
+	.appearance-card > .card-heading {
+		margin: 0 -20px;
+		padding: 20px;
+		border-bottom: 1px solid #e2e8f0;
+		align-items: center;
+	}
+
+	.appearance-section {
+		padding: 22px 0;
+		border-top: 1px solid #e2e8f0;
+	}
+
+	.appearance-section.first-section {
+		border-top: 0;
+	}
+
+	.section-heading {
+		margin-bottom: 14px;
+	}
+
+	.section-heading h3 {
+		margin: 0;
+		font-size: 0.92rem;
+		color: #0f172a;
+	}
+
+	.section-heading p {
+		margin: 4px 0 0;
+		font-size: 0.76rem;
+		color: #64748b;
+	}
+
+	.preset-grid {
 		display: grid;
-		grid-template-columns: 46px 1fr;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 10px;
+	}
+
+	.preset-card {
+		display: grid;
+		gap: 4px;
+		padding: 9px;
+		text-align: left;
+		border: 1px solid #dbe3ee;
+		background: #fff;
+		transition:
+			border-color 120ms ease,
+			box-shadow 120ms ease,
+			transform 120ms ease;
+	}
+
+	.preset-card:hover {
+		transform: translateY(-1px);
+		border-color: #94a3b8;
+	}
+
+	.preset-card.selected,
+	.radius-option.selected,
+	.font-option.selected {
+		border-color: #2563eb;
+		box-shadow: 0 0 0 2px rgb(37 99 235 / 0.12);
+	}
+
+	.preset-preview {
+		display: grid;
+		align-content: center;
+		gap: 6px;
+		height: 66px;
+		padding: 0 12px;
+		border: 1px solid rgb(148 163 184 / 0.22);
+		border-radius: 9px;
+	}
+
+	.preset-preview span {
+		display: block;
+		height: 9px;
+		border-radius: 999px;
+		opacity: 0.92;
+	}
+
+	.preset-card strong {
+		margin-top: 3px;
+		font-size: 0.78rem;
+		color: #0f172a;
+	}
+
+	.preset-card small {
+		font-size: 0.66rem;
+		font-weight: 550;
+		color: #64748b;
+	}
+
+	.background-tabs {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 4px;
+		padding: 4px;
+		border-radius: 12px;
+		background: #f1f5f9;
+	}
+
+	.background-tabs button {
+		border: 0;
+		background: transparent;
+		color: #64748b;
+	}
+
+	.background-tabs button.selected {
+		background: #fff;
+		color: #1d4ed8;
+		box-shadow: 0 2px 8px rgb(15 23 42 / 0.08);
+	}
+
+	.background-controls,
+	.gradient-controls,
+	.image-background-control {
+		margin-top: 12px;
+		padding: 14px;
+		border: 1px solid #e2e8f0;
+		border-radius: 14px;
+		background: #f8fafc;
+	}
+
+	.background-controls {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		flex-wrap: wrap;
+	}
+
+	.palette {
+		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+
+	.swatch {
+		width: 38px;
+		height: 38px;
+		padding: 0;
+		border: 1px solid #cbd5e1;
+		border-radius: 50%;
+		box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.65);
+	}
+
+	.swatch.selected {
+		border-color: #2563eb;
+		box-shadow:
+			inset 0 0 0 2px white,
+			0 0 0 2px #2563eb;
+	}
+
+	.visual-color-field {
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		margin: 0;
+		white-space: nowrap;
+	}
+
+	.visual-color-field input[type='color'],
+	.color-choice input[type='color'] {
+		width: 46px;
+		height: 40px;
+		padding: 3px;
+		border-radius: 10px;
+		cursor: pointer;
+	}
+
+	.gradient-controls {
+		display: grid;
+		gap: 14px;
+	}
+
+	.gradient-colors {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 10px;
+	}
+
+	.gradient-colors .visual-color-field {
+		justify-content: space-between;
+		padding: 9px 11px;
+		border: 1px solid #e2e8f0;
+		border-radius: 11px;
+		background: white;
+	}
+
+	.direction-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 14px;
+		font-size: 0.76rem;
+		font-weight: 700;
+		color: #475569;
+	}
+
+	.direction-row > div {
+		display: flex;
+		gap: 6px;
+	}
+
+	.direction-row button {
+		width: 42px;
+		height: 38px;
+		padding: 0;
+		font-size: 1.05rem;
+	}
+
+	.direction-row button.selected {
+		border-color: #2563eb;
+		background: #eff6ff;
+		color: #1d4ed8;
+	}
+
+	.image-background-control {
+		display: grid;
+		grid-template-columns: 132px 1fr;
+		gap: 14px;
+		align-items: center;
+	}
+
+	.image-background-control img,
+	.image-placeholder {
+		width: 132px;
+		height: 88px;
+		border-radius: 11px;
+		object-fit: cover;
+		border: 1px solid #dbe3ee;
+		background: white;
+	}
+
+	.image-placeholder {
+		display: grid;
+		place-items: center;
+		font-size: 2rem;
+		color: #94a3b8;
+	}
+
+	.image-background-control strong {
+		display: block;
+		font-size: 0.8rem;
+		color: #334155;
+	}
+
+	.image-background-control p {
+		margin: 4px 0 9px;
+		font-size: 0.72rem;
+		color: #64748b;
+	}
+
+	.hidden-file-input {
+		display: none;
+	}
+
+	.image-upload-button:disabled {
+		cursor: wait;
+		opacity: 0.6;
+	}
+
+	.color-choice-grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 9px;
+	}
+
+	.color-choice {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		margin: 0;
+		padding: 10px 11px;
+		border: 1px solid #e2e8f0;
+		border-radius: 12px;
+		background: #f8fafc;
+	}
+
+	.radius-grid {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
 		gap: 8px;
 	}
 
-	.color-field input[type='color'] {
-		padding: 3px;
-		height: 40px;
+	.radius-option {
+		display: grid;
+		gap: 8px;
+		justify-items: center;
+		padding: 12px 8px;
+		font-size: 0.72rem;
+		background: #fff;
+	}
+
+	.radius-sample {
+		display: block;
+		width: 56px;
+		height: 24px;
+		background: #bfdbfe;
+		border: 1px solid #60a5fa;
+	}
+
+	.font-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 9px;
+	}
+
+	.font-option {
+		display: grid;
+		grid-template-columns: 44px 1fr;
+		gap: 10px;
+		align-items: center;
+		padding: 10px;
+		text-align: left;
+		background: #fff;
+	}
+
+	.font-sample {
+		display: grid;
+		place-items: center;
+		width: 44px;
+		height: 44px;
+		border-radius: 10px;
+		background: #f1f5f9;
+		font-size: 1.15rem;
+		color: #0f172a;
+	}
+
+	.font-option strong,
+	.font-option small {
+		display: block;
+	}
+
+	.font-option strong {
+		font-size: 0.78rem;
+		color: #0f172a;
+	}
+
+	.font-option small {
+		margin-top: 2px;
+		font-size: 0.66rem;
+		font-weight: 550;
+		color: #64748b;
+	}
+
+	.advanced-settings {
+		margin-top: 4px;
+		padding: 13px 14px;
+		border: 1px dashed #cbd5e1;
+		border-radius: 12px;
+		background: #f8fafc;
+	}
+
+	.advanced-settings summary {
+		cursor: pointer;
+		font-size: 0.78rem;
+		font-weight: 750;
+		color: #475569;
+	}
+
+	.advanced-settings > p {
+		margin: 7px 0 0;
+		font-size: 0.72rem;
+		color: #64748b;
+	}
+
+	.advanced-grid {
+		margin-top: 5px;
 	}
 
 	.set-home {
@@ -753,6 +1491,7 @@
 	}
 
 	.phone-frame {
+		position: relative;
 		width: min(100%, 380px);
 		margin: 0 auto;
 		background: #0f172a;
@@ -813,7 +1552,6 @@
 
 		.preview-panel {
 			position: static;
-			order: -1;
 		}
 
 		.phone-frame {
@@ -836,6 +1574,36 @@
 
 		.field-grid.two {
 			grid-template-columns: 1fr;
+		}
+
+		.preset-grid,
+		.color-choice-grid,
+		.font-grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+
+		.radius-grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+
+		.background-tabs {
+			grid-template-columns: 1fr;
+		}
+
+		.gradient-colors,
+		.image-background-control {
+			grid-template-columns: 1fr;
+		}
+
+		.image-background-control img,
+		.image-placeholder {
+			width: 100%;
+			height: 140px;
+		}
+
+		.direction-row {
+			align-items: flex-start;
+			flex-direction: column;
 		}
 
 		.upload-row,

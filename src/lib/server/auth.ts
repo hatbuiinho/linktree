@@ -3,7 +3,7 @@ import { db } from '$lib/server/db';
 import { sessions, users, type User } from '$lib/server/db/schema';
 import { and, eq, gt } from 'drizzle-orm';
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import type { RequestEvent } from '@sveltejs/kit';
+import { error, type RequestEvent } from '@sveltejs/kit';
 
 export const SESSION_COOKIE = 'ttpq_admin_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
@@ -54,10 +54,28 @@ export async function getSessionUser(event: RequestEvent): Promise<User | null> 
 		.select({ user: users })
 		.from(sessions)
 		.innerJoin(users, eq(sessions.userId, users.id))
-		.where(and(eq(sessions.tokenHash, hashSessionToken(token)), gt(sessions.expiresAt, new Date())))
+		.where(
+			and(
+				eq(sessions.tokenHash, hashSessionToken(token)),
+				gt(sessions.expiresAt, new Date()),
+				eq(users.isActive, true)
+			)
+		)
 		.limit(1);
 
 	return row?.user ?? null;
+}
+
+export function requireAdmin(event: RequestEvent) {
+	const user = event.locals.user;
+	if (!user || user.role !== 'admin') {
+		throw error(403, 'Bạn không có quyền quản lý người dùng.');
+	}
+	return user;
+}
+
+export async function invalidateUserSessions(userId: string) {
+	await db.delete(sessions).where(eq(sessions.userId, userId));
 }
 
 export async function invalidateSession(event: RequestEvent) {

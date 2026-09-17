@@ -28,8 +28,15 @@ export const actions: Actions = {
 		if (!user || !verifyPassword(password, user.passwordHash)) {
 			return fail(400, { error: 'Email hoặc mật khẩu không đúng.', email });
 		}
+		if (!user.isActive) {
+			return fail(403, {
+				error: 'Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.',
+				email
+			});
+		}
 
 		await createSession(event, user.id);
+		await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
 		throw redirect(303, next);
 	}
 };
