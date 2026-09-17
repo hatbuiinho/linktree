@@ -21,7 +21,9 @@
 			<h1>Trang chia sẻ</h1>
 			<p>Quản lý trang chính và các trang con dùng để chia sẻ liên kết.</p>
 		</div>
-		<button class="primary" onclick={() => (showCreate = !showCreate)}>+ Tạo trang</button>
+		<button class="primary" onclick={() => (showCreate = !showCreate)}
+			><span class="icon-[mdi--plus]" aria-hidden="true"></span> Tạo trang</button
+		>
 	</header>
 
 	{#if form?.error}<div class="alert">{form.error}</div>{/if}
@@ -41,7 +43,9 @@
 					<span class:published={page.status === 'published'} class="status"
 						>{page.status === 'published' ? 'Đã xuất bản' : 'Bản nháp'}</span
 					>
-					{#if page.isHome}<span class="home-badge">★ Trang chính</span>{/if}
+					{#if page.isHome}<span class="home-badge"
+							><span class="icon-[mdi--star]" aria-hidden="true"></span> Trang chính</span
+						>{/if}
 				</div>
 				<h2>{page.title}</h2>
 				<a
@@ -58,7 +62,10 @@
 					<button
 						type="button"
 						onclick={() => copyPageUrl(page.id, page.isHome ? '/' : `/p/${page.slug}`)}
-						>{copiedId === page.id ? 'Đã copy ✓' : 'Copy URL'}</button
+						>{copiedId === page.id ? 'Đã copy' : 'Copy URL'}{#if copiedId === page.id}<span
+								class="icon-[mdi--check]"
+								aria-hidden="true"
+							></span>{/if}</button
 					>
 					<form method="POST" action="?/toggle">
 						<input type="hidden" name="id" value={page.id} />
@@ -127,6 +134,12 @@
 		font-weight: 650;
 		text-decoration: none;
 		cursor: pointer;
+	}
+
+	button .icon-\[mdi--plus\],
+	button .icon-\[mdi--check\],
+	.home-badge .icon-\[mdi--star\] {
+		vertical-align: -0.14em;
 	}
 
 	.primary,

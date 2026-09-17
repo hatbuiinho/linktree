@@ -7,15 +7,27 @@
 <div class="admin-shell">
 	<aside>
 		<a class="admin-brand" href={resolve('/admin')}>
-			<span>☸</span>
+			<span class="brand-icon icon-[mdi--dharmachakra]" aria-hidden="true"></span>
 			<div><strong>TTPQ Links</strong><small>Quản trị</small></div>
 		</a>
 		<nav>
-			<a href={resolve('/admin')}>▦ <span>Trang chia sẻ</span></a>
+			<a href={resolve('/admin')}
+				><span class="icon-[mdi--view-dashboard-outline]" aria-hidden="true"></span><span
+					class="nav-label">Trang chia sẻ</span
+				></a
+			>
 			{#if data.user?.role === 'admin'}
-				<a href={resolve('/admin/users')}>♙ <span>Người dùng</span></a>
+				<a href={resolve('/admin/users')}
+					><span class="icon-[mdi--account-group-outline]" aria-hidden="true"></span><span
+						class="nav-label">Người dùng</span
+					></a
+				>
 			{/if}
-			<a href={resolve('/')} target="_blank" rel="noreferrer">↗ <span>Xem trang chính</span></a>
+			<a href={resolve('/')} target="_blank" rel="noreferrer"
+				><span class="icon-[mdi--open-in-new]" aria-hidden="true"></span><span class="nav-label"
+					>Xem trang chính</span
+				></a
+			>
 		</nav>
 		<div class="admin-user">
 			<small>Đang đăng nhập</small>
@@ -57,7 +69,7 @@
 		text-decoration: none;
 	}
 
-	.admin-brand > span {
+	.brand-icon {
 		width: 42px;
 		height: 42px;
 		display: grid;
@@ -145,7 +157,7 @@
 		.admin-brand div,
 		.admin-user small,
 		.admin-user strong,
-		nav span {
+		nav .nav-label {
 			display: none;
 		}
 

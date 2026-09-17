@@ -6,7 +6,7 @@
 
 <main class="login-shell">
 	<form method="POST" class="login-card">
-		<div class="brand">☸</div>
+		<div class="brand"><span class="icon-[mdi--dharmachakra]" aria-hidden="true"></span></div>
 		<h1>Quản trị TTPQ</h1>
 		<p>Đăng nhập để quản lý các trang chia sẻ.</p>
 		<input type="hidden" name="next" value={data.next} />

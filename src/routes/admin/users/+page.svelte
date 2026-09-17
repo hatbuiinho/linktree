@@ -24,7 +24,7 @@
 			<p>Quản lý tài khoản được phép truy cập trang quản trị.</p>
 		</div>
 		<button class="primary" type="button" onclick={() => (showCreate = !showCreate)}
-			>+ Tạo user</button
+			><span class="icon-[mdi--plus]" aria-hidden="true"></span> Tạo user</button
 		>
 	</header>
 
@@ -240,6 +240,9 @@
 		padding: 9px 12px;
 		font-weight: 650;
 		cursor: pointer;
+	}
+	button .icon-\[mdi--plus\] {
+		vertical-align: -0.14em;
 	}
 	.primary {
 		background: #1d4ed8;

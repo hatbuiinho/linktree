@@ -17,9 +17,9 @@
 		'#0f172a'
 	];
 	const gradientDirections = [
-		{ label: '↓', value: '180deg', name: 'Từ trên xuống' },
-		{ label: '↘', value: '135deg', name: 'Chéo xuống phải' },
-		{ label: '→', value: '90deg', name: 'Từ trái sang phải' }
+		{ value: '180deg', name: 'Từ trên xuống' },
+		{ value: '135deg', name: 'Chéo xuống phải' },
+		{ value: '90deg', name: 'Từ trái sang phải' }
 	];
 	const radiusOptions = [
 		{ label: 'Vuông', value: 0 },
@@ -319,16 +319,21 @@
 <main class="editor-shell">
 	<header class="editor-header">
 		<div>
-			<a class="back" href={resolve('/admin')}>← Tất cả trang</a>
+			<a class="back" href={resolve('/admin')}
+				><span class="icon-[mdi--arrow-left]" aria-hidden="true"></span> Tất cả trang</a
+			>
 			<div class="title-row">
 				<h1>{page.title}</h1>
 				<span class:published={page.status === 'published'} class="status"
 					>{page.status === 'published' ? 'Đã xuất bản' : 'Bản nháp'}</span
 				>
-				{#if page.isHome}<span class="home-badge">★ Trang chính</span>{/if}
+				{#if page.isHome}<span class="home-badge"
+						><span class="icon-[mdi--star]" aria-hidden="true"></span> Trang chính</span
+					>{/if}
 			</div>
 			<a class="public-url" href={publicUrl} target="_blank" rel="noreferrer"
-				>{page.isHome ? 'ttpq.hatbuinho.me' : `ttpq.hatbuinho.me${publicPath}`} ↗</a
+				>{page.isHome ? 'ttpq.hatbuinho.me' : `ttpq.hatbuinho.me${publicPath}`}
+				<span class="icon-[mdi--open-in-new]" aria-hidden="true"></span></a
 			>
 		</div>
 		<div class="header-metric"><strong>{data.totalClicks}</strong><span>tổng click</span></div>
@@ -419,7 +424,9 @@
 								ondragover={(event) => event.preventDefault()}
 								ondrop={() => dropOn(block.id)}
 							>
-								<div class="drag-handle" title="Kéo để sắp xếp">⠿</div>
+								<div class="drag-handle" title="Kéo để sắp xếp">
+									<span class="icon-[mdi--drag-vertical]" aria-hidden="true"></span>
+								</div>
 								<form method="POST" action="?/updateBlock" class="block-form">
 									<input type="hidden" name="blockId" value={block.id} />
 									<div class="block-top">
@@ -461,7 +468,9 @@
 									onsubmit={(event) => !confirm('Xóa block này?') && event.preventDefault()}
 								>
 									<input type="hidden" name="blockId" value={block.id} />
-									<button class="icon-danger" title="Xóa block">×</button>
+									<button class="icon-danger" title="Xóa block" aria-label="Xóa block"
+										><span class="icon-[mdi--delete-outline]" aria-hidden="true"></span></button
+									>
 								</form>
 							</article>
 						{/each}
@@ -473,7 +482,7 @@
 								value="text">Text</option
 							><option value="divider">Divider</option></select
 						>
-						<button>+ Thêm block</button>
+						<button><span class="icon-[mdi--plus]" aria-hidden="true"></span> Thêm block</button>
 					</form>
 				</div>
 			{:else}
@@ -607,7 +616,14 @@
 												aria-pressed={gradientDirection === direction.value}
 												title={direction.name}
 												onclick={() => selectGradientDirection(direction.value)}
-												>{direction.label}</button
+												>{#if direction.value === '180deg'}<span
+														class="icon-[mdi--arrow-down]"
+														aria-hidden="true"
+													></span>{:else if direction.value === '135deg'}<span
+														class="icon-[mdi--arrow-bottom-right]"
+														aria-hidden="true"
+													></span>{:else}<span class="icon-[mdi--arrow-right]" aria-hidden="true"
+													></span>{/if}</button
 											>
 										{/each}
 									</div>
@@ -618,7 +634,9 @@
 								{#if backgroundImageUrl}
 									<img src={backgroundImageUrl} alt="Ảnh nền hiện tại" />
 								{:else}
-									<div class="image-placeholder" aria-hidden="true">▧</div>
+									<div class="image-placeholder" aria-hidden="true">
+										<span class="icon-[mdi--image-outline]"></span>
+									</div>
 								{/if}
 								<div>
 									<strong>{backgroundImageUrl ? 'Ảnh nền hiện tại' : 'Chưa có ảnh nền'}</strong>
@@ -749,7 +767,9 @@
 
 		<aside class="preview-panel">
 			<div class="preview-label">
-				<span>PREVIEW</span><a href={publicUrl} target="_blank" rel="noreferrer">Mở trang ↗</a>
+				<span>PREVIEW</span><a href={publicUrl} target="_blank" rel="noreferrer"
+					>Mở trang <span class="icon-[mdi--open-in-new]" aria-hidden="true"></span></a
+				>
 			</div>
 			<div class="phone-frame">
 				<div class="phone-notch"></div>
@@ -779,6 +799,14 @@
 		font-weight: 700;
 		color: #64748b;
 		text-decoration: none;
+	}
+
+	.back .icon-\[mdi--arrow-left\],
+	.home-badge .icon-\[mdi--star\],
+	.public-url .icon-\[mdi--open-in-new\],
+	.preview-label .icon-\[mdi--open-in-new\],
+	.add-block .icon-\[mdi--plus\] {
+		vertical-align: -0.14em;
 	}
 
 	.title-row {
@@ -1061,7 +1089,11 @@
 	}
 
 	.icon-danger {
-		padding: 2px 7px;
+		display: grid;
+		place-items: center;
+		width: 30px;
+		height: 30px;
+		padding: 0;
 		font-size: 1.25rem;
 		line-height: 1.2;
 		border: 0;

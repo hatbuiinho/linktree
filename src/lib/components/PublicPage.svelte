@@ -46,7 +46,9 @@
 			{#if data.page.logoUrl}
 				<img class="page-logo" src={data.page.logoUrl} alt={data.page.title} />
 			{:else}
-				<div class="page-logo page-logo-placeholder" aria-hidden="true">☸</div>
+				<div class="page-logo page-logo-placeholder" aria-hidden="true">
+					<span class="icon-[mdi--dharmachakra]"></span>
+				</div>
 			{/if}
 			<h1>{data.page.title}</h1>
 			{#if data.page.description}<p>{data.page.description}</p>{/if}
@@ -86,7 +88,7 @@
 							<strong>{block.title || 'Liên kết'}</strong>
 							{#if block.subtitle}<small>{block.subtitle}</small>{/if}
 						</span>
-						<span class="link-menu" aria-hidden="true">⋮</span>
+						<span class="link-menu icon-[mdi--dots-vertical]" aria-hidden="true"></span>
 					</a>
 				{/if}
 			{/each}
