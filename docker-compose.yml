@@ -1,0 +1,17 @@
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - '3000'
+    networks:
+      nginx_network:
+        aliases:
+          - ttpq-links
+
+networks:
+  nginx_network:
+    external: true
+    name: nginx_network
