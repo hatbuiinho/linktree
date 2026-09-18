@@ -50,6 +50,20 @@
       "when": 1789665944410,
       "tag": "0006_great_switch",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789699250336,
+      "tag": "0007_block_height",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789725477683,
+      "tag": "0008_soft_killmonger",
+      "breakpoints": true
     }
   ]
 }

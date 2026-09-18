@@ -73,6 +73,8 @@ export const actions: Actions = {
 				buttonRadius: sourceTheme?.buttonRadius ?? 999,
 				buttonPaddingX: sourceTheme?.buttonPaddingX ?? 22,
 				buttonPaddingY: sourceTheme?.buttonPaddingY ?? 10,
+				buttonMinHeight: sourceTheme?.buttonMinHeight ?? 0,
+				buttonFontSize: sourceTheme?.buttonFontSize ?? 16,
 				fontFamily: sourceTheme?.fontFamily ?? 'system-ui'
 			});
 

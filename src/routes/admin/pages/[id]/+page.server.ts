@@ -1,6 +1,6 @@
 import { db } from '$lib/server/db';
 import { blocks, clickEvents, pages, themes } from '$lib/server/db/schema';
-import { isPublicRoute, navigationTypes } from '$lib/navigation';
+import { isPublicRoute, navigationType, navigationTypes, navigationValue } from '$lib/navigation';
 import { createShareCode } from '$lib/server/share-code';
 import { uniqueSlug } from '$lib/server/page-service';
 import { validateManagedImageUrl } from '$lib/server/uploads';
@@ -92,11 +92,27 @@ export const load: PageServerLoad = async ({ params }) => {
 		.from(clickEvents)
 		.where(eq(clickEvents.pageId, page.id));
 	const clickMap = new Map(blockClicks.map((row) => [row.blockId, row.total]));
+	const targetPaths = new Map(
+		linkablePages.map((target) => [
+			target.id,
+			target.isHome ? '/' : `/p/${encodeURIComponent(target.slug)}`
+		])
+	);
 
 	return {
 		page,
 		theme,
-		blocks: pageBlocks.map((block) => ({ ...block, clicks: clickMap.get(block.id) ?? 0 })),
+		blocks: pageBlocks.map((block) => {
+			const destinationPath =
+				navigationType(block.metadata) === 'page'
+					? targetPaths.get(navigationValue(block.metadata))
+					: undefined;
+			return {
+				...block,
+				metadata: destinationPath ? { ...block.metadata, destinationPath } : block.metadata,
+				clicks: clickMap.get(block.id) ?? 0
+			};
+		}),
 		linkablePages,
 		totalClicks: total?.total ?? 0
 	};
@@ -129,6 +145,8 @@ export const actions: Actions = {
 		const buttonRadius = Math.max(0, Math.min(999, Number(form.get('buttonRadius') || 24)));
 		const buttonPaddingX = boundedInteger(form.get('buttonPaddingX'), 22, 0, 72);
 		const buttonPaddingY = boundedInteger(form.get('buttonPaddingY'), 10, 0, 48);
+		const buttonMinHeight = boundedInteger(form.get('buttonMinHeight'), 0, 0, 180);
+		const buttonFontSize = boundedInteger(form.get('buttonFontSize'), 16, 12, 32);
 		const backgroundMobileValue = String(form.get('backgroundMobileValue') || '').trim();
 		const overlayColor = String(form.get('backgroundOverlayColor') || '#0f172a').trim();
 		if (!/^#[0-9a-f]{6}$/i.test(overlayColor))
@@ -159,6 +177,8 @@ export const actions: Actions = {
 				buttonRadius,
 				buttonPaddingX,
 				buttonPaddingY,
+				buttonMinHeight,
+				buttonFontSize,
 				fontFamily: String(form.get('fontFamily') || 'system-ui').trim() || 'system-ui'
 			})
 			.where(eq(themes.pageId, params.id));

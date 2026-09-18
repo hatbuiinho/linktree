@@ -5,6 +5,22 @@ import { blockImageUrl } from './share-link';
 const WIDTH = 1200;
 const HEIGHT = 630;
 const MAX_REMOTE_IMAGE_SIZE = 8 * 1024 * 1024;
+const OG_FONT_FAMILY = 'Noto Og';
+
+let ogFontCss: Promise<string> | null = null;
+
+function loadOgFont(origin: string) {
+	if (!ogFontCss) {
+		ogFontCss = fetch(new URL('/fonts/NotoSans-Bold.ttf', origin))
+			.then(async (response) => {
+				if (!response.ok) throw new Error(`Không thể tải font OG: ${response.status}`);
+				const font = Buffer.from(await response.arrayBuffer()).toString('base64');
+				return `@font-face { font-family: '${OG_FONT_FAMILY}'; src: url(data:font/ttf;base64,${font}) format('truetype'); font-weight: 400 900; }`;
+			})
+			.catch(() => '');
+	}
+	return ogFontCss;
+}
 
 function escapeXml(value: string) {
 	return value.replace(/[<>&'"]/g, (character) => {
@@ -122,6 +138,7 @@ function overlaySvg(input: {
 	accent: string;
 	accentDark: string;
 	destination: string;
+	fontCss: string;
 }) {
 	const titleLines = wrapTitle(input.title);
 	const titleSize = titleFontSize(input.title);
@@ -130,16 +147,17 @@ function overlaySvg(input: {
 		const title = titleLines
 			.map(
 				(line, index) =>
-					`<text x="600" y="${isIcon ? 418 + index * Math.max(54, titleSize) : 400 + index * Math.max(54, titleSize)}" fill="#ffffff" text-anchor="middle" font-family="Arial, sans-serif" font-size="${titleSize}" font-weight="700">${escapeXml(line)}</text>`
+					`<text x="600" y="${isIcon ? 418 + index * Math.max(54, titleSize) : 400 + index * Math.max(54, titleSize)}" fill="#ffffff" text-anchor="middle" font-family="${OG_FONT_FAMILY}, sans-serif" font-size="${titleSize}" font-weight="700">${escapeXml(line)}</text>`
 			)
 			.join('');
 		return Buffer.from(`
 			<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
+				<style>${input.fontCss}</style>
 				<defs><linearGradient id="background" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${input.accent}"/><stop offset="1" stop-color="${input.accentDark}"/></linearGradient></defs>
 				<rect width="1200" height="630" fill="url(#background)"/>
 				${isIcon ? '<circle cx="600" cy="170" r="210" fill="#ffffff" fill-opacity="0.05"/><rect x="430" y="42" width="340" height="270" rx="34" fill="#ffffff" fill-opacity="0.13"/><circle cx="600" cy="177" r="117" fill="none" stroke="#ffffff" stroke-width="7"/>' : '<rect x="310" y="42" width="580" height="280" rx="34" fill="#ffffff" fill-opacity="0.13"/>'}
 				${title}
-				<text x="600" y="570" fill="#ffffff" fill-opacity="0.82" text-anchor="middle" font-family="Arial, sans-serif" font-size="24">${escapeXml(input.destination)}</text>
+				<text x="600" y="570" fill="#ffffff" fill-opacity="0.82" text-anchor="middle" font-family="${OG_FONT_FAMILY}, sans-serif" font-size="24">${escapeXml(input.destination)}</text>
 			</svg>
 		`);
 	}
@@ -149,23 +167,28 @@ function overlaySvg(input: {
 	const title = titleLines
 		.map(
 			(line, index) =>
-				`<text x="${textX}" y="${titleY + index * Math.max(60, titleSize + 12)}" fill="#ffffff" font-family="Arial, sans-serif" font-size="${titleSize}" font-weight="700">${escapeXml(line)}</text>`
+				`<text x="${textX}" y="${titleY + index * Math.max(60, titleSize + 12)}" fill="#ffffff" font-family="${OG_FONT_FAMILY}, sans-serif" font-size="${titleSize}" font-weight="700">${escapeXml(line)}</text>`
 		)
 		.join('');
 	const labelY = 378;
 
 	return Buffer.from(`
 		<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
+			<style>${input.fontCss}</style>
 			<defs><linearGradient id="shade" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#020617" stop-opacity="0.12"/><stop offset="1" stop-color="#020617" stop-opacity="0.68"/></linearGradient></defs><rect width="1200" height="630" fill="url(#shade)"/>
-			<text x="${textX}" y="${labelY}" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="26" font-weight="600" letter-spacing="2">${escapeXml(input.pageTitle.toUpperCase().slice(0, 54))}</text>
+			<text x="${textX}" y="${labelY}" fill="#cbd5e1" font-family="${OG_FONT_FAMILY}, sans-serif" font-size="26" font-weight="600" letter-spacing="2">${escapeXml(input.pageTitle.toUpperCase().slice(0, 54))}</text>
 			${title}
 			<rect x="${textX}" y="552" width="190" height="4" rx="2" fill="#60a5fa"/>
-			<text x="${textX}" y="595" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="22">${escapeXml(input.destination)}</text>
+			<text x="${textX}" y="595" fill="#cbd5e1" font-family="${OG_FONT_FAMILY}, sans-serif" font-size="22">${escapeXml(input.destination)}</text>
 		</svg>
 	`);
 }
 
-export async function createOgImage(input: { block: Block; page: Page; theme: Theme | null }) {
+export async function createOgImage(
+	input: { block: Block; page: Page; theme: Theme | null },
+	origin: string
+) {
+	const fontCss = await loadOgFont(origin);
 	const blockImage = blockImageUrl(input.block.metadata);
 	const isCardImage = input.block.metadata.imageDisplay === 'card';
 	const primaryImage = blockImage || input.page.logoUrl;
@@ -200,7 +223,8 @@ export async function createOgImage(input: { block: Block; page: Page; theme: Th
 				visual: primaryBuffer ? (isCardImage ? 'card' : 'icon') : 'none',
 				accent,
 				accentDark,
-				destination: destinationLabel(input.block.url)
+				destination: destinationLabel(input.block.url),
+				fontCss
 			})
 		}
 	];

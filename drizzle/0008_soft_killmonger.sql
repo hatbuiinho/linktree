@@ -1,0 +1,1 @@
+ALTER TABLE "themes" ADD COLUMN "button_font_size" integer DEFAULT 16 NOT NULL;

@@ -202,6 +202,8 @@
 			buttonRadius: 999,
 			buttonPaddingX: 22,
 			buttonPaddingY: 10,
+			buttonMinHeight: 0,
+			buttonFontSize: 16,
 			fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif'
 		}
 	);
@@ -232,9 +234,14 @@
 			? imageBackground(theme.backgroundMobileValue || theme.backgroundValue)
 			: theme.backgroundValue
 	);
-
+	let buttonIconSize = $derived(
+		Math.max(32, Math.min(72, Math.round((theme.buttonMinHeight || 0) * 0.5)))
+	);
+	let compactButtonIconSize = $derived(
+		Math.max(26, Math.min(58, Math.round((theme.buttonMinHeight || 0) * 0.42)))
+	);
 	let shellStyle = $derived(
-		`--page-bg:${background};--page-bg-mobile:${mobileBackground};--button-color:${theme.buttonColor};--button-text:${theme.buttonTextColor};--page-text:${theme.textColor};--button-radius:${theme.buttonRadius}px;--button-padding-x:${theme.buttonPaddingX}px;--button-padding-y:${theme.buttonPaddingY}px;--page-font:${theme.fontFamily}`
+		`--page-bg:${background};--page-bg-mobile:${mobileBackground};--button-color:${theme.buttonColor};--button-text:${theme.buttonTextColor};--page-text:${theme.textColor};--button-radius:${theme.buttonRadius}px;--button-padding-x:${theme.buttonPaddingX}px;--button-padding-y:${theme.buttonPaddingY}px;--button-min-height:${theme.buttonMinHeight}px;--button-font-size:${theme.buttonFontSize}px;--button-icon-size:${buttonIconSize}px;--compact-button-icon-size:${compactButtonIconSize}px;--page-font:${theme.fontFamily}`
 	);
 </script>
 
@@ -329,6 +336,7 @@
 						<a
 							class:disabled={!isAvailable}
 							class:link-card={cardImage}
+							class:has-image-media={Boolean(imageUrl && !cardImage)}
 							class="link-button"
 							href={href || undefined}
 							target={targetType === 'external' && block.openNewTab ? '_blank' : undefined}
@@ -344,8 +352,10 @@
 								trackLink(block.id);
 							}}
 						>
-							{#if imageUrl}
-								<img class:card-image={cardImage} class="link-image" src={imageUrl} alt="" />
+							{#if imageUrl && cardImage}
+								<img class="link-image card-image" src={imageUrl} alt="" />
+							{:else if imageUrl}
+								<span class="link-media"><img class="link-image" src={imageUrl} alt="" /></span>
 							{:else if blockIconUrl}
 								<span
 									class="link-icon"
@@ -369,8 +379,7 @@
 								onclick={(event) => {
 									event.stopPropagation();
 									openShareMenu(block);
-								}}
-								><span class="icon-[mdi--dots-vertical]" aria-hidden="true"></span></button
+								}}><span class="icon-[mdi--dots-vertical]" aria-hidden="true"></span></button
 							>
 						{/if}
 					</div>
@@ -545,13 +554,17 @@
 
 	.page-header,
 	.blocks > * {
-		transition: filter 280ms ease, opacity 280ms ease;
+		transition:
+			filter 280ms ease,
+			opacity 280ms ease;
 	}
 
 	.link-block {
 		position: relative;
 		scroll-margin-block: 24px;
-		transition: filter 280ms ease, opacity 280ms ease;
+		transition:
+			filter 280ms ease,
+			opacity 280ms ease;
 	}
 
 	.public-page:has(.shared-block-highlight) .page-header,
@@ -572,7 +585,9 @@
 
 	@keyframes shared-block-highlight {
 		50% {
-			box-shadow: 0 0 0 10px rgb(251 191 36 / 0.2), 0 12px 28px rgb(15 23 42 / 0.16);
+			box-shadow:
+				0 0 0 10px rgb(251 191 36 / 0.2),
+				0 12px 28px rgb(15 23 42 / 0.16);
 		}
 	}
 
@@ -584,8 +599,10 @@
 
 	.link-button {
 		display: grid;
-		grid-template-columns: 42px 1fr 28px;
+		grid-template-columns: max-content minmax(0, 1fr) 28px;
 		align-items: center;
+		min-height: var(--button-min-height);
+		box-sizing: border-box;
 		padding: var(--button-padding-y) var(--button-padding-x);
 		border-radius: var(--button-radius);
 		background: var(--button-color);
@@ -595,6 +612,20 @@
 		transition:
 			transform 150ms ease,
 			box-shadow 150ms ease;
+	}
+
+	.link-button.has-image-media {
+		display: flex;
+		gap: 12px;
+	}
+
+	.link-button.has-image-media .link-copy {
+		min-width: 0;
+		flex: 1 1 0;
+	}
+
+	.link-button.has-image-media .link-menu-spacer {
+		flex: 0 0 28px;
 	}
 
 	.link-button[href]:hover {
@@ -608,8 +639,8 @@
 	}
 
 	.link-icon {
-		width: 26px;
-		height: 26px;
+		width: var(--button-icon-size);
+		height: var(--button-icon-size);
 		justify-self: start;
 		background: currentColor;
 		-webkit-mask: var(--icon-image) center / contain no-repeat;
@@ -622,10 +653,26 @@
 	}
 
 	.link-image {
-		width: 32px;
-		height: 32px;
+		display: block;
+		width: 100%;
+		height: 100%;
 		object-fit: contain;
+		object-position: center;
 		border-radius: var(--button-radius);
+	}
+
+	.link-media {
+		display: flex;
+		flex: 0 0 auto;
+		align-self: stretch;
+	}
+
+	.link-media .link-image {
+		width: auto;
+		max-width: 72px;
+		height: 100%;
+		max-height: 100%;
+		object-fit: contain;
 	}
 
 	.link-button.link-card {
@@ -653,7 +700,7 @@
 		display: grid;
 		gap: 3px;
 		text-align: center;
-		font-size: 1rem;
+		font-size: var(--button-font-size);
 	}
 
 	.link-copy strong {
@@ -929,8 +976,32 @@
 	}
 
 	.compact {
+		/* The editor embeds this component inside a scrollable phone preview.
+		 * Fixed layers would otherwise be painted over the whole admin viewport. */
+		overflow: hidden;
 		min-height: 100%;
 		padding: 30px 18px 72px;
+		background: var(--page-bg-mobile);
+	}
+
+	.compact .background-blur {
+		display: none;
+	}
+
+	.compact::before {
+		position: absolute;
+	}
+
+	/* The compact variant is rendered inside the phone mockup. Its layout must
+	 * match the public page on a real mobile viewport, regardless of the editor's
+	 * desktop viewport width. */
+	.compact .page-card {
+		width: 100%;
+		min-height: 0;
+		padding: 0;
+		border-radius: 0;
+		background: transparent;
+		box-shadow: none;
 	}
 
 	.compact .page-logo {
@@ -956,13 +1027,21 @@
 	}
 
 	.compact .link-button {
-		grid-template-columns: 32px 1fr 20px;
+		grid-template-columns: max-content minmax(0, 1fr) 20px;
 		font-size: 0.86rem;
 	}
 
-	.compact .link-image {
-		width: 26px;
-		height: 26px;
+	.compact .link-button.has-image-media {
+		gap: 10px;
+	}
+
+	.compact .link-button.has-image-media .link-menu-spacer {
+		flex-basis: 20px;
+	}
+
+	.compact .link-icon {
+		width: var(--compact-button-icon-size);
+		height: var(--compact-button-icon-size);
 	}
 
 	.compact .link-image.card-image {

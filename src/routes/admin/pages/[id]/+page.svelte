@@ -159,6 +159,8 @@
 			buttonRadius: 999,
 			buttonPaddingX: 22,
 			buttonPaddingY: 10,
+			buttonMinHeight: 0,
+			buttonFontSize: 16,
 			fontFamily: 'system-ui',
 			createdAt: new Date(),
 			updatedAt: new Date()
@@ -319,15 +321,27 @@
 	}
 
 	function setNavigationType(block: (typeof blocks)[number], type: NavigationType) {
+		const metadata = { ...block.metadata };
+		delete metadata.destinationPath;
 		block.metadata = {
-			...block.metadata,
+			...metadata,
 			navigationType: type,
 			navigationValue: type === 'route' ? publicRoutes[0].path : type === 'back' ? '' : ''
 		};
 	}
 
 	function setNavigationValue(block: (typeof blocks)[number], value: string) {
-		block.metadata = { ...block.metadata, navigationValue: value };
+		const metadata = { ...block.metadata };
+		delete metadata.destinationPath;
+		const targetPage =
+			navigationType(block.metadata) === 'page'
+				? data.linkablePages.find((page) => page.id === value)
+				: undefined;
+		block.metadata = {
+			...metadata,
+			navigationValue: value,
+			...(targetPage ? { destinationPath: targetPage.isHome ? '/' : `/p/${targetPage.slug}` } : {})
+		};
 	}
 
 	function setNavigationFallback(block: (typeof blocks)[number], value: string) {
@@ -800,6 +814,8 @@
 					<input type="hidden" name="buttonRadius" value={theme.buttonRadius} />
 					<input type="hidden" name="buttonPaddingX" value={theme.buttonPaddingX} />
 					<input type="hidden" name="buttonPaddingY" value={theme.buttonPaddingY} />
+					<input type="hidden" name="buttonMinHeight" value={theme.buttonMinHeight} />
+					<input type="hidden" name="buttonFontSize" value={theme.buttonFontSize} />
 					<input type="hidden" name="fontFamily" value={theme.fontFamily} />
 
 					<section class="appearance-section first-section">
@@ -1088,6 +1104,16 @@
 							<label>
 								<span>Dọc <output>{theme.buttonPaddingY}px</output></span>
 								<input type="range" min="4" max="36" bind:value={theme.buttonPaddingY} />
+							</label>
+							<label>
+								<span
+									>Chiều cao tối thiểu <output>{theme.buttonMinHeight || 'Tự động'}</output></span
+								>
+								<input type="range" min="0" max="180" step="4" bind:value={theme.buttonMinHeight} />
+							</label>
+							<label>
+								<span>Cỡ chữ <output>{theme.buttonFontSize}px</output></span>
+								<input type="range" min="12" max="32" bind:value={theme.buttonFontSize} />
 							</label>
 						</div>
 					</section>

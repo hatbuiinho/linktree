@@ -1,0 +1,1 @@
+ALTER TABLE "themes" ADD COLUMN "button_min_height" integer DEFAULT 0 NOT NULL;

@@ -97,6 +97,8 @@ export const themes = pgTable(
 		buttonRadius: integer('button_radius').notNull().default(999),
 		buttonPaddingX: integer('button_padding_x').notNull().default(22),
 		buttonPaddingY: integer('button_padding_y').notNull().default(10),
+		buttonMinHeight: integer('button_min_height').notNull().default(0),
+		buttonFontSize: integer('button_font_size').notNull().default(16),
 		fontFamily: text('font_family').notNull().default('system-ui'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
