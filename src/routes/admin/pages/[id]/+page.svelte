@@ -1,8 +1,18 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { enhance } from '$app/forms';
+	import { tick } from 'svelte';
+	import type { SubmitFunction } from '@sveltejs/kit';
 	import IconPicker from '$lib/components/IconPicker.svelte';
 	import PublicPage from '$lib/components/PublicPage.svelte';
-	import { uploadImage } from '$lib/uploads/client';
+	import {
+		navigationFallback,
+		navigationType,
+		navigationValue,
+		publicRoutes,
+		type NavigationType
+	} from '$lib/navigation';
+	import { uploadImage, uploadResponsiveBackground } from '$lib/uploads/client';
 
 	type BackgroundType = 'color' | 'gradient' | 'image';
 
@@ -92,6 +102,7 @@
 			previewBackground: '#ffffff',
 			backgroundType: 'color' as const,
 			backgroundValue: '#ffffff',
+			backgroundPosition: 'center',
 			buttonColor: '#f1f5f9',
 			buttonTextColor: '#0f172a',
 			textColor: '#0f172a',
@@ -136,10 +147,18 @@
 			pageId: data.page.id,
 			backgroundType: 'color' as const,
 			backgroundValue: '#ffffff',
+			backgroundMobileValue: null,
+			backgroundPosition: 'center',
+			backgroundFocalX: 50,
+			backgroundFocalY: 50,
+			backgroundOverlayColor: '#0f172a',
+			backgroundOverlayOpacity: 0,
 			buttonColor: '#93c5fd',
 			buttonTextColor: '#172554',
 			textColor: '#172554',
 			buttonRadius: 999,
+			buttonPaddingX: 22,
+			buttonPaddingY: 10,
 			fontFamily: 'system-ui',
 			createdAt: new Date(),
 			updatedAt: new Date()
@@ -150,7 +169,7 @@
 	let activeTab = $state<'content' | 'appearance'>('content');
 	let draggedId = $state<string | null>(null);
 	let reorderStatus = $state('');
-	let uploadingKind = $state<'logo' | 'background' | null>(null);
+	let uploadingKind = $state<'logo' | 'background' | 'block-image' | null>(null);
 	let imageUploadMessage = $state('');
 	let imageUploadError = $state('');
 	let solidBackground = $state('#ffffff');
@@ -159,6 +178,8 @@
 	let gradientDirection = $state('135deg');
 	let backgroundImageUrl = $state('');
 	let backgroundFileInput = $state<HTMLInputElement>();
+	let highlightedBlockId = $state<string | null>(null);
+	let adjustingFocalPoint = $state(false);
 
 	let previewData = $derived({ page, theme, blocks });
 	let publicPath = $derived(page.isHome ? '/' : `/p/${page.slug}`);
@@ -187,6 +208,56 @@
 				gradientColor2 = match[3];
 			}
 		}
+	}
+
+	function clampPercent(value: number) {
+		return Math.max(0, Math.min(100, Math.round(value)));
+	}
+
+	function rgbaFromHex(color: string, opacity: number) {
+		const match = color.match(/^#([0-9a-f]{6})$/i);
+		if (!match) return `rgb(15 23 42 / ${opacity / 100})`;
+		const value = match[1];
+		return `rgb(${Number.parseInt(value.slice(0, 2), 16)} ${Number.parseInt(value.slice(2, 4), 16)} ${Number.parseInt(value.slice(4, 6), 16)} / ${opacity / 100})`;
+	}
+
+	function focalPreviewStyle() {
+		return `--focal-image:url("${backgroundImageUrl}");--focal-position:${theme.backgroundFocalX}% ${theme.backgroundFocalY}%;--focal-overlay:${rgbaFromHex(theme.backgroundOverlayColor, theme.backgroundOverlayOpacity)};`;
+	}
+
+	function setFocalPoint(event: PointerEvent) {
+		const preview = event.currentTarget as HTMLElement;
+		const bounds = preview.getBoundingClientRect();
+		theme.backgroundFocalX = clampPercent(((event.clientX - bounds.left) / bounds.width) * 100);
+		theme.backgroundFocalY = clampPercent(((event.clientY - bounds.top) / bounds.height) * 100);
+	}
+
+	function startFocalPointAdjustment(event: PointerEvent) {
+		adjustingFocalPoint = true;
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		setFocalPoint(event);
+	}
+
+	function moveFocalPoint(event: PointerEvent) {
+		if (adjustingFocalPoint) setFocalPoint(event);
+	}
+
+	function stopFocalPointAdjustment() {
+		adjustingFocalPoint = false;
+	}
+
+	function moveFocalPointWithKeyboard(event: KeyboardEvent) {
+		const step = event.shiftKey ? 10 : 2;
+		if (event.key === 'ArrowLeft')
+			theme.backgroundFocalX = clampPercent(theme.backgroundFocalX - step);
+		else if (event.key === 'ArrowRight')
+			theme.backgroundFocalX = clampPercent(theme.backgroundFocalX + step);
+		else if (event.key === 'ArrowUp')
+			theme.backgroundFocalY = clampPercent(theme.backgroundFocalY - step);
+		else if (event.key === 'ArrowDown')
+			theme.backgroundFocalY = clampPercent(theme.backgroundFocalY + step);
+		else return;
+		event.preventDefault();
 	}
 
 	function applyPreset(preset: (typeof themePresets)[number]) {
@@ -235,6 +306,73 @@
 		applyGradient();
 	}
 
+	function getBlockImageUrl(metadata: Record<string, unknown>) {
+		return typeof metadata.imageUrl === 'string' ? metadata.imageUrl : '';
+	}
+
+	function getBlockImageDisplay(metadata: Record<string, unknown>) {
+		return metadata.imageDisplay === 'card' ? 'card' : 'icon';
+	}
+
+	function setBlockImageDisplay(block: (typeof blocks)[number], value: string) {
+		block.metadata = { ...block.metadata, imageDisplay: value === 'card' ? 'card' : 'icon' };
+	}
+
+	function setNavigationType(block: (typeof blocks)[number], type: NavigationType) {
+		block.metadata = {
+			...block.metadata,
+			navigationType: type,
+			navigationValue: type === 'route' ? publicRoutes[0].path : type === 'back' ? '' : ''
+		};
+	}
+
+	function setNavigationValue(block: (typeof blocks)[number], value: string) {
+		block.metadata = { ...block.metadata, navigationValue: value };
+	}
+
+	function setNavigationFallback(block: (typeof blocks)[number], value: string) {
+		block.metadata = { ...block.metadata, navigationFallback: value };
+	}
+
+	function goBackToAdmin(event: MouseEvent) {
+		event.preventDefault();
+		if (history.length > 1) {
+			history.back();
+			return;
+		}
+		window.location.assign(resolve('/admin'));
+	}
+
+	const enhanceMutation: SubmitFunction = () => {
+		return async ({ result, update }) => {
+			if (result.type === 'success') {
+				const actionData = result.data as {
+					block?: (typeof blocks)[number];
+					deletedBlockId?: string;
+					isHome?: boolean;
+				};
+				if (actionData.block) blocks = [...blocks, { ...actionData.block, clicks: 0 }];
+				if (actionData.deletedBlockId)
+					blocks = blocks.filter((block) => block.id !== actionData.deletedBlockId);
+				if (actionData.isHome) page.isHome = true;
+			}
+			await update({ invalidateAll: false, reset: false });
+		};
+	};
+
+	async function focusBlockFromPreview(blockId: string) {
+		activeTab = 'content';
+		highlightedBlockId = blockId;
+		await tick();
+		document.getElementById(`block-editor-${blockId}`)?.scrollIntoView({
+			behavior: 'smooth',
+			block: 'center'
+		});
+		setTimeout(() => {
+			if (highlightedBlockId === blockId) highlightedBlockId = null;
+		}, 1800);
+	}
+
 	async function persistOrder() {
 		reorderStatus = 'Đang lưu thứ tự…';
 		const response = await fetch(resolve('/admin/pages/[id]/order', { id: page.id }), {
@@ -260,32 +398,47 @@
 	}
 
 	async function persistImage(
-		kind: 'logo' | 'background',
+		kind: 'logo' | 'background' | 'block-image',
 		file: File,
-		input?: HTMLInputElement | null
+		input?: HTMLInputElement | null,
+		block?: (typeof blocks)[number]
 	) {
 		uploadingKind = kind;
 		imageUploadMessage = '';
 		imageUploadError = '';
 
 		try {
-			const url = await uploadImage(page.id, kind, file);
+			const responsiveBackground =
+				kind === 'background' ? await uploadResponsiveBackground(page.id, file) : null;
+			const url = responsiveBackground?.desktopUrl ?? (await uploadImage(page.id, kind, file));
 			const payload = new FormData();
 			payload.set('kind', kind);
 			payload.set('url', url);
+			if (responsiveBackground?.mobileUrl) payload.set('mobileUrl', responsiveBackground.mobileUrl);
+			if (block) payload.set('blockId', block.id);
 			const response = await fetch('?/upload', { method: 'POST', body: payload });
 			if (!response.ok) throw new Error('Ảnh đã tải lên MinIO nhưng không thể lưu URL vào trang.');
 
 			if (kind === 'logo') {
 				page.logoUrl = url;
-			} else {
+			} else if (kind === 'background') {
 				backgroundImageUrl = url;
 				theme.backgroundType = 'image';
 				theme.backgroundValue = url;
+				theme.backgroundMobileValue = responsiveBackground?.mobileUrl ?? null;
+			} else if (block) {
+				block.metadata = { ...block.metadata, imageUrl: url };
 			}
 
 			if (input) input.value = '';
-			imageUploadMessage = kind === 'logo' ? 'Đã cập nhật logo.' : 'Đã cập nhật ảnh nền.';
+			imageUploadMessage =
+				kind === 'logo'
+					? 'Đã cập nhật logo.'
+					: kind === 'background'
+						? responsiveBackground?.mobileUrl
+							? 'Đã cập nhật ảnh nền và bản tối ưu cho điện thoại.'
+							: 'Đã cập nhật ảnh nền.'
+						: 'Đã cập nhật ảnh cho liên kết.';
 		} catch (cause) {
 			imageUploadError = cause instanceof Error ? cause.message : 'Không thể tải ảnh.';
 		} finally {
@@ -312,6 +465,13 @@
 		if (!file) return;
 		await persistImage('background', file, input);
 	}
+
+	async function handleBlockImageChange(block: (typeof blocks)[number], event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		await persistImage('block-image', file, input, block);
+	}
 </script>
 
 <svelte:head><title>{page.title} · TTPQ Admin</title></svelte:head>
@@ -319,7 +479,7 @@
 <main class="editor-shell">
 	<header class="editor-header">
 		<div>
-			<a class="back" href={resolve('/admin')}
+			<a class="back" href={resolve('/admin')} onclick={goBackToAdmin}
 				><span class="icon-[mdi--arrow-left]" aria-hidden="true"></span> Tất cả trang</a
 			>
 			<div class="title-row">
@@ -354,7 +514,7 @@
 			</div>
 
 			{#if activeTab === 'content'}
-				<form method="POST" action="?/updatePage" class="panel-card">
+				<form method="POST" action="?/updatePage" class="panel-card" use:enhance={enhanceMutation}>
 					<div class="card-heading">
 						<div>
 							<h2>Thông tin trang</h2>
@@ -416,7 +576,9 @@
 					<div class="block-list">
 						{#each blocks as block (block.id)}
 							<article
+								id={`block-editor-${block.id}`}
 								class:dragging={draggedId === block.id}
+								class:preview-selected={highlightedBlockId === block.id}
 								class="block-editor"
 								draggable="true"
 								ondragstart={() => (draggedId = block.id)}
@@ -427,7 +589,12 @@
 								<div class="drag-handle" title="Kéo để sắp xếp">
 									<span class="icon-[mdi--drag-vertical]" aria-hidden="true"></span>
 								</div>
-								<form method="POST" action="?/updateBlock" class="block-form">
+								<form
+									method="POST"
+									action="?/updateBlock"
+									class="block-form"
+									use:enhance={enhanceMutation}
+								>
 									<input type="hidden" name="blockId" value={block.id} />
 									<div class="block-top">
 										<span class="block-type">{block.type}</span>
@@ -441,19 +608,130 @@
 									{/if}
 									{#if block.type === 'link'}
 										<label
-											>URL <input
-												name="url"
-												bind:value={block.url}
-												placeholder="https://…"
-											/></label
-										>
+											>Hành động
+											<select
+												name="navigationType"
+												value={navigationType(block.metadata)}
+												onchange={(event) =>
+													setNavigationType(block, event.currentTarget.value as NavigationType)}
+											>
+												<option value="external">Mở website ngoài</option>
+												<option value="page">Mở trang trong hệ thống</option>
+												<option value="route">Mở route của app</option>
+												<option value="back">Quay lại trang trước</option>
+											</select>
+										</label>
+										{#if navigationType(block.metadata) === 'external'}
+											<label
+												>URL <input
+													name="url"
+													bind:value={block.url}
+													placeholder="https://…"
+												/></label
+											>
+										{:else if navigationType(block.metadata) === 'page'}
+											<label
+												>Trang đích
+												<select
+													name="navigationValue"
+													value={navigationValue(block.metadata)}
+													onchange={(event) => setNavigationValue(block, event.currentTarget.value)}
+												>
+													<option value="">Chọn trang đã xuất bản</option>
+													{#each data.linkablePages as targetPage (targetPage.id)}
+														<option value={targetPage.id}
+															>{targetPage.isHome ? 'Trang chính' : targetPage.title}</option
+														>
+													{/each}
+												</select>
+											</label>
+										{:else if navigationType(block.metadata) === 'route'}
+											<label
+												>Route đích
+												<select
+													name="navigationValue"
+													value={navigationValue(block.metadata)}
+													onchange={(event) => setNavigationValue(block, event.currentTarget.value)}
+												>
+													{#each publicRoutes as route (route.path)}
+														<option value={route.path}>{route.label} ({route.path})</option>
+													{/each}
+												</select>
+											</label>
+										{:else}
+											<input type="hidden" name="navigationValue" value="" />
+											<label
+												>Điểm đến khi không có lịch sử
+												<select
+													name="navigationFallback"
+													value={navigationFallback(block.metadata)}
+													onchange={(event) =>
+														setNavigationFallback(block, event.currentTarget.value)}
+												>
+													{#each publicRoutes as route (route.path)}
+														<option value={route.path}>{route.label}</option>
+													{/each}
+												</select>
+											</label>
+										{/if}
 										<div class="field-grid two">
 											<IconPicker bind:value={block.icon} />
-											<label class="check"
+											<label
+												class="check"
+												class:visually-hidden={navigationType(block.metadata) !== 'external'}
 												><input name="openNewTab" type="checkbox" bind:checked={block.openNewTab} /> Mở
 												tab mới</label
 											>
 										</div>
+										<div class="block-image-control">
+											<input
+												type="hidden"
+												name="imageUrl"
+												value={getBlockImageUrl(block.metadata)}
+											/>
+											{#if getBlockImageUrl(block.metadata)}
+												<img src={getBlockImageUrl(block.metadata)} alt="Ảnh biểu tượng liên kết" />
+											{:else}
+												<span class="icon-[mdi--image-outline]" aria-hidden="true"></span>
+											{/if}
+											<div>
+												<strong>Ảnh thay icon</strong>
+												<p>Chọn dạng icon nhỏ hoặc card ảnh lớn cho liên kết.</p>
+												<label class="image-display-field"
+													>Hiển thị ảnh
+													<select
+														name="imageDisplay"
+														value={getBlockImageDisplay(block.metadata)}
+														onchange={(event) =>
+															setBlockImageDisplay(block, event.currentTarget.value)}
+													>
+														<option value="icon">Icon</option>
+														<option value="card">Card ảnh</option>
+													</select>
+												</label>
+												<input
+													type="file"
+													accept="image/jpeg,image/png,image/webp,image/gif"
+													disabled={uploadingKind !== null}
+													onchange={(event) => handleBlockImageChange(block, event)}
+												/>
+												{#if getBlockImageUrl(block.metadata)}
+													<button
+														type="button"
+														onclick={() => (block.metadata = { ...block.metadata, imageUrl: '' })}
+														>Bỏ ảnh</button
+													>
+												{/if}
+											</div>
+										</div>
+									{:else if block.type === 'youtube'}
+										<label
+											>URL YouTube <input
+												name="url"
+												bind:value={block.url}
+												placeholder="https://youtu.be/..."
+											/></label
+										>
 									{/if}
 									<div class="block-actions">
 										<label class="check"
@@ -465,6 +743,7 @@
 								<form
 									method="POST"
 									action="?/deleteBlock"
+									use:enhance={enhanceMutation}
 									onsubmit={(event) => !confirm('Xóa block này?') && event.preventDefault()}
 								>
 									<input type="hidden" name="blockId" value={block.id} />
@@ -476,17 +755,22 @@
 						{/each}
 					</div>
 
-					<form method="POST" action="?/addBlock" class="add-block">
+					<form method="POST" action="?/addBlock" class="add-block" use:enhance={enhanceMutation}>
 						<select name="type"
-							><option value="link">Link</option><option value="heading">Heading</option><option
-								value="text">Text</option
-							><option value="divider">Divider</option></select
+							><option value="link">Link</option><option value="youtube">YouTube</option><option
+								value="heading">Heading</option
+							><option value="text">Text</option><option value="divider">Divider</option></select
 						>
 						<button><span class="icon-[mdi--plus]" aria-hidden="true"></span> Thêm block</button>
 					</form>
 				</div>
 			{:else}
-				<form method="POST" action="?/updateTheme" class="panel-card appearance-card">
+				<form
+					method="POST"
+					action="?/updateTheme"
+					class="panel-card appearance-card"
+					use:enhance={enhanceMutation}
+				>
 					<div class="card-heading">
 						<div>
 							<h2>Giao diện trang</h2>
@@ -497,10 +781,25 @@
 
 					<input type="hidden" name="backgroundType" value={theme.backgroundType} />
 					<input type="hidden" name="backgroundValue" value={theme.backgroundValue} />
+					<input
+						type="hidden"
+						name="backgroundMobileValue"
+						value={theme.backgroundMobileValue || ''}
+					/>
+					<input type="hidden" name="backgroundFocalX" value={theme.backgroundFocalX} />
+					<input type="hidden" name="backgroundFocalY" value={theme.backgroundFocalY} />
+					<input type="hidden" name="backgroundOverlayColor" value={theme.backgroundOverlayColor} />
+					<input
+						type="hidden"
+						name="backgroundOverlayOpacity"
+						value={theme.backgroundOverlayOpacity}
+					/>
 					<input type="hidden" name="buttonColor" value={theme.buttonColor} />
 					<input type="hidden" name="buttonTextColor" value={theme.buttonTextColor} />
 					<input type="hidden" name="textColor" value={theme.textColor} />
 					<input type="hidden" name="buttonRadius" value={theme.buttonRadius} />
+					<input type="hidden" name="buttonPaddingX" value={theme.buttonPaddingX} />
+					<input type="hidden" name="buttonPaddingY" value={theme.buttonPaddingY} />
 					<input type="hidden" name="fontFamily" value={theme.fontFamily} />
 
 					<section class="appearance-section first-section">
@@ -665,6 +964,77 @@
 							{#if imageUploadMessage}<p class="upload-message success-text">
 									{imageUploadMessage}
 								</p>{/if}
+							<div class="background-composition-control">
+								<div>
+									<strong>Điểm lấy nét</strong>
+									<p>Kéo điểm tròn đến phần ảnh cần luôn được ưu tiên khi ảnh bị cắt.</p>
+								</div>
+								<div
+									class:adjusting={adjustingFocalPoint}
+									class="focal-preview"
+									style={focalPreviewStyle()}
+									role="application"
+									aria-label="Khung chọn điểm lấy nét ảnh nền"
+									onpointerdown={startFocalPointAdjustment}
+									onpointermove={moveFocalPoint}
+									onpointerup={stopFocalPointAdjustment}
+									onpointercancel={stopFocalPointAdjustment}
+								>
+									<span class="focal-preview-overlay" aria-hidden="true"></span>
+									<button
+										class="focal-point"
+										type="button"
+										style={`left:${theme.backgroundFocalX}%;top:${theme.backgroundFocalY}%;`}
+										aria-label={`Điểm lấy nét: ngang ${theme.backgroundFocalX}%, dọc ${theme.backgroundFocalY}%. Dùng phím mũi tên để điều chỉnh.`}
+										onkeydown={moveFocalPointWithKeyboard}
+									></button>
+								</div>
+								<div class="focal-sliders">
+									<label
+										>Ngang <input
+											type="range"
+											min="0"
+											max="100"
+											bind:value={theme.backgroundFocalX}
+										/></label
+									>
+									<label
+										>Dọc <input
+											type="range"
+											min="0"
+											max="100"
+											bind:value={theme.backgroundFocalY}
+										/></label
+									>
+									<button
+										type="button"
+										onclick={() => {
+											theme.backgroundFocalX = 50;
+											theme.backgroundFocalY = 50;
+										}}>Đặt giữa</button
+									>
+								</div>
+							</div>
+
+							<div class="background-overlay-control">
+								<div>
+									<strong>Lớp phủ tăng tương phản</strong>
+									<p>Giúp chữ và nút dễ đọc hơn trên ảnh nền nhiều chi tiết.</p>
+								</div>
+								<label class="visual-color-field">
+									<span>Màu phủ</span>
+									<input type="color" bind:value={theme.backgroundOverlayColor} />
+								</label>
+								<label class="overlay-opacity">
+									<span>Độ đậm <output>{theme.backgroundOverlayOpacity}%</output></span>
+									<input
+										type="range"
+										min="0"
+										max="80"
+										bind:value={theme.backgroundOverlayOpacity}
+									/>
+								</label>
+							</div>
 						{/if}
 					</section>
 
@@ -707,6 +1077,18 @@
 									<strong>{option.label}</strong>
 								</button>
 							{/each}
+						</div>
+						<div class="block-padding-control">
+							<strong>Khoảng đệm block</strong>
+							<p>Điều chỉnh không gian bên trong các block liên kết.</p>
+							<label>
+								<span>Ngang <output>{theme.buttonPaddingX}px</output></span>
+								<input type="range" min="8" max="48" bind:value={theme.buttonPaddingX} />
+							</label>
+							<label>
+								<span>Dọc <output>{theme.buttonPaddingY}px</output></span>
+								<input type="range" min="4" max="36" bind:value={theme.buttonPaddingY} />
+							</label>
 						</div>
 					</section>
 
@@ -752,7 +1134,12 @@
 				</form>
 
 				{#if !page.isHome}
-					<form method="POST" action="?/setHome" class="panel-card set-home">
+					<form
+						method="POST"
+						action="?/setHome"
+						class="panel-card set-home"
+						use:enhance={enhanceMutation}
+					>
 						<div>
 							<h2>Đặt làm trang chính</h2>
 							<p>
@@ -773,7 +1160,9 @@
 			</div>
 			<div class="phone-frame">
 				<div class="phone-notch"></div>
-				<div class="phone-screen"><PublicPage data={previewData} compact /></div>
+				<div class="phone-screen">
+					<PublicPage data={previewData} compact onBlockSelect={focusBlockFromPreview} />
+				</div>
 			</div>
 		</aside>
 	</div>
@@ -1005,6 +1394,68 @@
 		font-weight: 650;
 	}
 
+	.block-image-control {
+		display: grid;
+		grid-template-columns: 56px minmax(0, 1fr);
+		gap: 10px;
+		align-items: center;
+		margin-top: 12px;
+		padding: 10px;
+		border: 1px solid #e2e8f0;
+		border-radius: 12px;
+		background: white;
+	}
+
+	.block-image-control > img,
+	.block-image-control > span {
+		width: 56px;
+		height: 56px;
+		border: 1px solid #dbe3ee;
+		border-radius: 10px;
+		object-fit: contain;
+		background: #f8fafc;
+		color: #94a3b8;
+	}
+
+	.block-image-control > span {
+		display: grid;
+		place-items: center;
+		font-size: 1.5rem;
+	}
+
+	.block-image-control strong {
+		display: block;
+		font-size: 0.76rem;
+		color: #334155;
+	}
+
+	.block-image-control p {
+		margin: 2px 0 7px;
+		font-size: 0.7rem;
+		color: #64748b;
+	}
+
+	.block-image-control .image-display-field {
+		margin: 7px 0 0;
+		font-size: 0.7rem;
+	}
+
+	.block-image-control .image-display-field select {
+		padding: 5px 7px;
+		font-size: 0.72rem;
+	}
+
+	.block-image-control input[type='file'] {
+		padding: 6px;
+		font-size: 0.7rem;
+	}
+
+	.block-image-control button {
+		margin-top: 6px;
+		padding: 5px 8px;
+		font-size: 0.7rem;
+	}
+
 	.error-text {
 		color: #b91c1c;
 	}
@@ -1035,6 +1486,11 @@
 	.block-editor.dragging {
 		opacity: 0.45;
 		border-color: #3b82f6;
+	}
+
+	.block-editor.preview-selected {
+		border-color: #2563eb;
+		box-shadow: 0 0 0 3px rgb(37 99 235 / 0.14);
 	}
 
 	.drag-handle {
@@ -1078,6 +1534,10 @@
 
 	.check input {
 		width: auto;
+	}
+
+	.visually-hidden {
+		display: none;
 	}
 
 	.block-actions {
@@ -1382,6 +1842,126 @@
 		opacity: 0.6;
 	}
 
+	.background-composition-control,
+	.background-overlay-control {
+		margin-top: 12px;
+		padding: 14px;
+		border: 1px solid #e2e8f0;
+		border-radius: 14px;
+		background: #f8fafc;
+	}
+
+	.background-composition-control > div:first-child strong,
+	.background-overlay-control strong {
+		display: block;
+		font-size: 0.76rem;
+		color: #475569;
+	}
+
+	.background-composition-control p,
+	.background-overlay-control p {
+		margin: 3px 0 10px;
+		font-size: 0.72rem;
+		color: #64748b;
+	}
+
+	.focal-preview {
+		position: relative;
+		height: 218px;
+		margin-top: 8px;
+		overflow: hidden;
+		border: 1px solid #dbe3ee;
+		border-radius: 12px;
+		background-image: var(--focal-image);
+		background-position: var(--focal-position);
+		background-size: cover;
+		cursor: crosshair;
+		touch-action: none;
+	}
+
+	.focal-preview.adjusting {
+		cursor: grabbing;
+	}
+
+	.focal-preview-overlay {
+		position: absolute;
+		inset: 0;
+		background: var(--focal-overlay);
+		pointer-events: none;
+	}
+
+	.focal-point {
+		position: absolute;
+		z-index: 1;
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		transform: translate(-50%, -50%);
+		border: 3px solid white;
+		border-radius: 50%;
+		background: #2563eb;
+		box-shadow: 0 0 0 2px rgb(15 23 42 / 0.38);
+		cursor: grab;
+	}
+
+	.focal-point:focus-visible {
+		outline: 3px solid #fbbf24;
+		outline-offset: 3px;
+	}
+
+	.focal-sliders {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+		gap: 10px;
+		align-items: end;
+		margin-top: 10px;
+	}
+
+	.focal-sliders label,
+	.overlay-opacity {
+		margin: 0;
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: #475569;
+	}
+
+	.focal-sliders input,
+	.overlay-opacity input {
+		width: 100%;
+		margin-top: 5px;
+	}
+
+	.focal-sliders button {
+		padding: 7px 9px;
+		font-size: 0.72rem;
+		white-space: nowrap;
+	}
+
+	.background-overlay-control {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 12px 16px;
+		align-items: center;
+	}
+
+	.background-overlay-control .visual-color-field {
+		justify-self: end;
+	}
+
+	.overlay-opacity {
+		grid-column: 1 / -1;
+	}
+
+	.overlay-opacity span {
+		display: flex;
+		justify-content: space-between;
+	}
+
+	.overlay-opacity output {
+		font-variant-numeric: tabular-nums;
+		color: #1d4ed8;
+	}
+
 	.color-choice-grid {
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1421,6 +2001,55 @@
 		height: 24px;
 		background: #bfdbfe;
 		border: 1px solid #60a5fa;
+	}
+
+	.block-padding-control {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 10px 14px;
+		margin-top: 12px;
+		padding: 12px 14px;
+		border: 1px solid #e2e8f0;
+		border-radius: 14px;
+		background: #f8fafc;
+	}
+
+	.block-padding-control > strong,
+	.block-padding-control > p {
+		grid-column: 1 / -1;
+	}
+
+	.block-padding-control > strong {
+		font-size: 0.76rem;
+		color: #475569;
+	}
+
+	.block-padding-control > p {
+		margin: -6px 0 0;
+		font-size: 0.72rem;
+		color: #64748b;
+	}
+
+	.block-padding-control label {
+		margin: 0;
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: #475569;
+	}
+
+	.block-padding-control label > span {
+		display: flex;
+		justify-content: space-between;
+	}
+
+	.block-padding-control input {
+		width: 100%;
+		margin-top: 5px;
+	}
+
+	.block-padding-control output {
+		font-variant-numeric: tabular-nums;
+		color: #1d4ed8;
 	}
 
 	.font-grid {

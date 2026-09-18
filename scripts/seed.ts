@@ -4,6 +4,7 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
 import { blocks, pages, themes, users } from '../src/lib/server/db/schema.ts';
+import { createShareCode } from '../src/lib/server/share-code.ts';
 
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not set');
 
@@ -63,20 +64,21 @@ async function seedHomePage() {
 	});
 
 	await db.insert(blocks).values([
-		{ pageId: page.id, type: 'link', title: 'WEBSITE', icon: 'globe', position: 0 },
-		{ pageId: page.id, type: 'link', title: 'YOUTUBE (Tổng hợp)', icon: 'youtube', position: 1 },
-		{ pageId: page.id, type: 'link', title: 'FACEBOOK (Tổng hợp)', icon: 'facebook', position: 2 },
+		{ shareCode: createShareCode(), pageId: page.id, type: 'link', title: 'WEBSITE', icon: 'globe', position: 0 },
+		{ shareCode: createShareCode(), pageId: page.id, type: 'link', title: 'YOUTUBE (Tổng hợp)', icon: 'youtube', position: 1 },
+		{ shareCode: createShareCode(), pageId: page.id, type: 'link', title: 'FACEBOOK (Tổng hợp)', icon: 'facebook', position: 2 },
 		{
+			shareCode: createShareCode(),
 			pageId: page.id,
 			type: 'link',
 			title: 'DIGITAL CPQ - Các nền tảng số',
 			icon: 'music',
 			position: 3
 		},
-		{ pageId: page.id, type: 'link', title: 'TIKTOK', icon: 'tiktok', position: 4 },
-		{ pageId: page.id, type: 'heading', title: 'HƯỚNG DẪN NGHI THỨC', position: 5 },
-		{ pageId: page.id, type: 'link', title: 'THỈNH THÁNH ĐỘ MỆNH', icon: 'chevrons', position: 6 },
-		{ pageId: page.id, type: 'link', title: 'QUY Y TAM BẢO', icon: 'chevrons', position: 7 }
+		{ shareCode: createShareCode(), pageId: page.id, type: 'link', title: 'TIKTOK', icon: 'tiktok', position: 4 },
+		{ shareCode: createShareCode(), pageId: page.id, type: 'heading', title: 'HƯỚNG DẪN NGHI THỨC', position: 5 },
+		{ shareCode: createShareCode(), pageId: page.id, type: 'link', title: 'THỈNH THÁNH ĐỘ MỆNH', icon: 'chevrons', position: 6 },
+		{ shareCode: createShareCode(), pageId: page.id, type: 'link', title: 'QUY Y TAM BẢO', icon: 'chevrons', position: 7 }
 	]);
 }
 

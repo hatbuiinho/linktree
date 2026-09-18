@@ -13,7 +13,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 export const pageStatus = pgEnum('page_status', ['draft', 'published']);
-export const blockType = pgEnum('block_type', ['link', 'heading', 'text', 'divider']);
+export const blockType = pgEnum('block_type', ['link', 'heading', 'text', 'divider', 'youtube']);
 export const backgroundType = pgEnum('background_type', ['color', 'gradient', 'image']);
 export const userRole = pgEnum('user_role', ['admin', 'editor']);
 
@@ -85,10 +85,18 @@ export const themes = pgTable(
 			.references(() => pages.id, { onDelete: 'cascade' }),
 		backgroundType: backgroundType('background_type').notNull().default('color'),
 		backgroundValue: text('background_value').notNull().default('#ffffff'),
+		backgroundMobileValue: text('background_mobile_value'),
+		backgroundPosition: text('background_position').notNull().default('center'),
+		backgroundFocalX: integer('background_focal_x').notNull().default(50),
+		backgroundFocalY: integer('background_focal_y').notNull().default(50),
+		backgroundOverlayColor: text('background_overlay_color').notNull().default('#0f172a'),
+		backgroundOverlayOpacity: integer('background_overlay_opacity').notNull().default(0),
 		buttonColor: text('button_color').notNull().default('#93c5fd'),
 		buttonTextColor: text('button_text_color').notNull().default('#172554'),
 		textColor: text('text_color').notNull().default('#172554'),
 		buttonRadius: integer('button_radius').notNull().default(999),
+		buttonPaddingX: integer('button_padding_x').notNull().default(22),
+		buttonPaddingY: integer('button_padding_y').notNull().default(10),
 		fontFamily: text('font_family').notNull().default('system-ui'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -103,6 +111,7 @@ export const blocks = pgTable(
 	'blocks',
 	{
 		id: uuid('id').defaultRandom().primaryKey(),
+		shareCode: text('share_code').notNull(),
 		pageId: uuid('page_id')
 			.notNull()
 			.references(() => pages.id, { onDelete: 'cascade' }),
@@ -122,6 +131,7 @@ export const blocks = pgTable(
 			.$onUpdate(() => new Date())
 	},
 	(table) => [
+		uniqueIndex('blocks_share_code_unique').on(table.shareCode),
 		index('blocks_page_id_idx').on(table.pageId),
 		index('blocks_page_position_idx').on(table.pageId, table.position)
 	]

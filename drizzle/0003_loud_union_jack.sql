@@ -1,0 +1,1 @@
+ALTER TABLE "themes" ADD COLUMN "background_position" text DEFAULT 'center' NOT NULL;

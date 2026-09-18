@@ -1,5 +1,6 @@
 import { db } from '$lib/server/db';
 import { blocks, clickEvents, pages, themes } from '$lib/server/db/schema';
+import { createShareCode } from '$lib/server/share-code';
 import { uniqueSlug } from '$lib/server/page-service';
 import { asc, count, desc, eq } from 'drizzle-orm';
 import { fail, redirect } from '@sveltejs/kit';
@@ -60,16 +61,25 @@ export const actions: Actions = {
 				pageId: created.id,
 				backgroundType: sourceTheme?.backgroundType ?? 'color',
 				backgroundValue: sourceTheme?.backgroundValue ?? '#ffffff',
+				backgroundMobileValue: sourceTheme?.backgroundMobileValue ?? null,
+				backgroundPosition: sourceTheme?.backgroundPosition ?? 'center',
+				backgroundFocalX: sourceTheme?.backgroundFocalX ?? 50,
+				backgroundFocalY: sourceTheme?.backgroundFocalY ?? 50,
+				backgroundOverlayColor: sourceTheme?.backgroundOverlayColor ?? '#0f172a',
+				backgroundOverlayOpacity: sourceTheme?.backgroundOverlayOpacity ?? 0,
 				buttonColor: sourceTheme?.buttonColor ?? '#93c5fd',
 				buttonTextColor: sourceTheme?.buttonTextColor ?? '#172554',
 				textColor: sourceTheme?.textColor ?? '#172554',
 				buttonRadius: sourceTheme?.buttonRadius ?? 999,
+				buttonPaddingX: sourceTheme?.buttonPaddingX ?? 22,
+				buttonPaddingY: sourceTheme?.buttonPaddingY ?? 10,
 				fontFamily: sourceTheme?.fontFamily ?? 'system-ui'
 			});
 
 			if (sourceBlocks.length) {
 				await tx.insert(blocks).values(
 					sourceBlocks.map((block) => ({
+						shareCode: createShareCode(),
 						pageId: created.id,
 						type: block.type,
 						title: block.title,

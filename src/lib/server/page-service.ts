@@ -1,17 +1,10 @@
 import { db } from '$lib/server/db';
 import { blocks, pages, themes } from '$lib/server/db/schema';
-import { and, asc, eq, ne } from 'drizzle-orm';
+import { navigationType, navigationValue } from '$lib/navigation';
+import { normalizeSlug } from '$lib/slug';
+import { and, asc, eq, inArray, ne } from 'drizzle-orm';
 
-export function normalizeSlug(value: string) {
-	return value
-		.normalize('NFD')
-		.replace(/[\u0300-\u036f]/g, '')
-		.toLowerCase()
-		.trim()
-		.replace(/[^a-z0-9]+/g, '-')
-		.replace(/^-+|-+$/g, '')
-		.slice(0, 80);
-}
+export { normalizeSlug } from '$lib/slug';
 
 export async function slugAvailable(slug: string, excludeId?: string) {
 	const where = excludeId
@@ -44,6 +37,31 @@ export async function getPublicPage(where: 'home' | string) {
 		.from(blocks)
 		.where(and(eq(blocks.pageId, page.id), eq(blocks.enabled, true)))
 		.orderBy(asc(blocks.position));
+	const pageTargetIds = pageBlocks
+		.filter((block) => navigationType(block.metadata) === 'page')
+		.map((block) => navigationValue(block.metadata))
+		.filter(Boolean);
+	const targetPages = pageTargetIds.length
+		? await db
+				.select({ id: pages.id, slug: pages.slug, isHome: pages.isHome })
+				.from(pages)
+				.where(and(eq(pages.status, 'published'), inArray(pages.id, pageTargetIds)))
+		: [];
+	const targetPaths = new Map(
+		targetPages.map((target) => [
+			target.id,
+			target.isHome ? '/' : `/p/${encodeURIComponent(target.slug)}`
+		])
+	);
 
-	return { page, theme, blocks: pageBlocks };
+	return {
+		page,
+		theme,
+		blocks: pageBlocks.map((block) => {
+			const targetPath = targetPaths.get(navigationValue(block.metadata));
+			return targetPath
+				? { ...block, metadata: { ...block.metadata, destinationPath: targetPath } }
+				: block;
+		})
+	};
 }

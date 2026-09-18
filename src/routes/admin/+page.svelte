@@ -1,9 +1,22 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { normalizeSlug } from '$lib/slug';
 
 	let { data, form } = $props();
 	let showCreate = $state(false);
 	let copiedId = $state<string | null>(null);
+	let newPageTitle = $state('');
+	let newPageSlug = $state('');
+	let newPageSlugCustomized = $state(false);
+
+	$effect(() => {
+		if (!newPageSlugCustomized) newPageSlug = normalizeSlug(newPageTitle);
+	});
+
+	function normalizeNewPageSlug() {
+		newPageSlug = normalizeSlug(newPageSlug);
+		newPageSlugCustomized = newPageSlug !== normalizeSlug(newPageTitle);
+	}
 
 	async function copyPageUrl(id: string, path: string) {
 		await navigator.clipboard.writeText(`${window.location.origin}${path}`);
@@ -30,8 +43,19 @@
 
 	{#if showCreate}
 		<form method="POST" action="?/create" class="create-card">
-			<label>Tên trang <input name="title" placeholder="Ví dụ: NGHI THỨC" required /></label>
-			<label>Slug <input name="slug" placeholder="nghi-thuc (có thể để trống)" /></label>
+			<label
+				>Tên trang
+				<input name="title" bind:value={newPageTitle} placeholder="Ví dụ: NGHI THỨC" required />
+			</label>
+			<label
+				>Slug
+				<input
+					name="slug"
+					bind:value={newPageSlug}
+					placeholder="nghi-thuc"
+					oninput={normalizeNewPageSlug}
+				/>
+			</label>
 			<div class="actions"><button class="primary">Tạo và chỉnh sửa</button></div>
 		</form>
 	{/if}

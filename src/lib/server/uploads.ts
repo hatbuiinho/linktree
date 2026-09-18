@@ -13,7 +13,7 @@ const allowedTypes: Record<string, string> = {
 	'image/gif': '.gif'
 };
 
-export type ImageKind = 'logo' | 'background';
+export type ImageKind = 'logo' | 'background' | 'block-image';
 
 type MinioConfig = {
 	endpoint: string;
@@ -82,7 +82,8 @@ function encodeObjectKey(key: string) {
 }
 
 export function validateImageUpload(kind: string, contentType: string, size: number) {
-	if (kind !== 'logo' && kind !== 'background') throw new Error('Loại ảnh không hợp lệ.');
+	if (kind !== 'logo' && kind !== 'background' && kind !== 'block-image')
+		throw new Error('Loại ảnh không hợp lệ.');
 	const extension = allowedTypes[contentType.toLowerCase()];
 	if (!extension) throw new Error('Chỉ hỗ trợ JPG, PNG, WEBP hoặc GIF.');
 	if (!Number.isFinite(size) || size <= 0) throw new Error('File ảnh không hợp lệ.');

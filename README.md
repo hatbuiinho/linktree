@@ -33,9 +33,9 @@ npm run db:seed
 
 ## Page builder
 
-Admin có thể tạo/nhân bản/xóa page, chuyển draft/published, đặt page làm trang chính, sửa logo/theme, upload background, thêm block `link`, `heading`, `text`, `divider`, kéo thả thứ tự và xem preview tức thời. Link public đi qua `/go/[blockId]` để ghi nhận lượt click trước khi redirect.
+Admin có thể tạo/nhân bản/xóa page, chuyển draft/published, đặt page làm trang chính, sửa logo/theme, upload background, thêm block `link`, `heading`, `text`, `divider`, kéo thả thứ tự và xem preview tức thời. Ảnh nền có điểm lấy nét kéo-thả, lớp phủ tăng tương phản và tự tạo biến thể WebP cho mobile. Mỗi link block có preview chia sẻ, URL `/share/[blockId]` với Open Graph riêng và ảnh PNG 1200×630 tạo từ logo/ảnh block cùng tiêu đề. Link public sử dụng URL đích trực tiếp và gửi tracking nền qua `/track/[blockId]`; `/go/[blockId]` chỉ dùng cho landing share.
 
-Ảnh logo và background được lưu trên MinIO/S3-compatible storage. Luồng upload giống project `mq`: admin xin presigned PUT URL từ server, browser upload file trực tiếp lên MinIO, sau đó app chỉ lưu public URL vào PostgreSQL. Presigned URL hết hạn sau 5 phút; JPG, PNG, WEBP và GIF được hỗ trợ với giới hạn 8 MB.
+Ảnh logo và background được lưu trên MinIO/S3-compatible storage. Luồng upload giống project `mq`: admin xin presigned PUT URL từ server, browser upload file trực tiếp lên MinIO, sau đó app chỉ lưu public URL vào PostgreSQL. Khi upload background dạng JPG, PNG hoặc WEBP, browser nén thành WebP tối đa 1920 px và tạo thêm bản 1080 px cho màn hình nhỏ; GIF được giữ nguyên để bảo toàn animation. Presigned URL hết hạn sau 5 phút; JPG, PNG, WEBP và GIF được hỗ trợ với giới hạn 8 MB.
 
 Các biến môi trường cần cấu hình:
 
