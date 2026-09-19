@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import type { Block, Page, Theme } from '$lib/server/db/schema';
 import { blockImageUrl } from './share-link';
+import { assertPublicHttpUrl } from './link-preview';
 
 const WIDTH = 1200;
 const HEIGHT = 630;
@@ -117,10 +118,21 @@ function destinationLabel(value: string | null) {
 	}
 }
 
-async function fetchImage(url: string | null) {
+async function fetchImage(url: string | null, publicOnly = false) {
 	if (!url) return null;
 	try {
-		const response = await fetch(url, { signal: AbortSignal.timeout(4_000) });
+		let target = publicOnly ? await assertPublicHttpUrl(url) : new URL(url);
+		let response: Response | null = null;
+		for (let redirects = 0; redirects <= 3; redirects += 1) {
+			response = await fetch(target, { redirect: 'manual', signal: AbortSignal.timeout(4_000) });
+			if (response.status < 300 || response.status >= 400) break;
+			const location = response.headers.get('location');
+			if (!location || redirects === 3) return null;
+			target = publicOnly
+				? await assertPublicHttpUrl(new URL(location, target).toString())
+				: new URL(location, target);
+		}
+		if (!response) return null;
 		if (!response.ok) return null;
 		const contentLength = Number(response.headers.get('content-length') || 0);
 		if (contentLength > MAX_REMOTE_IMAGE_SIZE) return null;
@@ -190,9 +202,16 @@ export async function createOgImage(
 ) {
 	const fontCss = await loadOgFont(origin);
 	const blockImage = blockImageUrl(input.block.metadata);
+	const blockSourceImage =
+		typeof input.block.metadata.sourceImageUrl === 'string'
+			? input.block.metadata.sourceImageUrl
+			: null;
 	const isCardImage = input.block.metadata.imageDisplay === 'card';
-	const primaryImage = blockImage || input.page.logoUrl;
-	const primaryBuffer = await fetchImage(primaryImage);
+	const primaryBuffer =
+		(await fetchImage(blockImage)) ||
+		(await fetchImage(blockSourceImage, true)) ||
+		(await fetchImage(input.page.logoUrl)) ||
+		(await fetchImage(input.page.logoSourceUrl, true));
 	const dominant = primaryBuffer ? await prominentColor(primaryBuffer) : null;
 	const themeBackground =
 		input.theme?.backgroundType === 'image' ? await fetchImage(input.theme.backgroundValue) : null;

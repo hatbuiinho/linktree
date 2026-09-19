@@ -8,8 +8,9 @@ type ImageKind = 'logo' | 'background' | 'block-image';
 type PresignedUpload = {
 	bucket: string;
 	object_key: string;
-	upload_url: string;
+	upload_url: string | null;
 	public_url: string;
+	existing: boolean;
 	expires_at: string;
 };
 
@@ -23,6 +24,8 @@ export async function uploadImage(pageId: string, kind: ImageKind, file: File) {
 	if (file.size <= 0) throw new Error('File ảnh không hợp lệ.');
 	if (file.size > MAX_IMAGE_SIZE) throw new Error('Ảnh tối đa 8 MB.');
 
+	const hashBytes = new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()));
+	const contentHash = Array.from(hashBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 	const presignResponse = await fetch(resolve('/admin/api/uploads/presign'), {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
@@ -31,11 +34,14 @@ export async function uploadImage(pageId: string, kind: ImageKind, file: File) {
 			file_name: file.name,
 			content_type: file.type,
 			size: file.size,
-			kind
+			kind,
+			content_hash: contentHash
 		})
 	});
 	const presigned = (await presignResponse.json()) as PresignedUpload & { error?: string };
 	if (!presignResponse.ok) throw new Error(presigned.error || 'Không thể chuẩn bị tải ảnh.');
+
+	if (presigned.existing || !presigned.upload_url) return presigned.public_url;
 
 	const uploadResponse = await fetch(presigned.upload_url, {
 		method: 'PUT',

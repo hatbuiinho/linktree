@@ -11,6 +11,7 @@ import {
 	uniqueIndex,
 	uuid
 } from 'drizzle-orm/pg-core';
+import { eq } from 'drizzle-orm';
 
 export const pageStatus = pgEnum('page_status', ['draft', 'published']);
 export const blockType = pgEnum('block_type', ['link', 'heading', 'text', 'divider', 'youtube']);
@@ -62,6 +63,7 @@ export const pages = pgTable(
 		title: text('title').notNull(),
 		description: text('description'),
 		logoUrl: text('logo_url'),
+		logoSourceUrl: text('logo_source_url'),
 		isHome: boolean('is_home').notNull().default(false),
 		status: pageStatus('status').notNull().default('draft'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -135,7 +137,10 @@ export const blocks = pgTable(
 	(table) => [
 		uniqueIndex('blocks_share_code_unique').on(table.shareCode),
 		index('blocks_page_id_idx').on(table.pageId),
-		index('blocks_page_position_idx').on(table.pageId, table.position)
+		index('blocks_page_position_idx').on(table.pageId, table.position),
+		index('blocks_public_page_position_idx')
+			.on(table.pageId, table.position)
+			.where(eq(table.enabled, true))
 	]
 );
 
@@ -153,7 +158,8 @@ export const clickEvents = pgTable(
 	},
 	(table) => [
 		index('click_events_page_id_idx').on(table.pageId),
-		index('click_events_block_id_idx').on(table.blockId)
+		index('click_events_block_id_idx').on(table.blockId),
+		index('click_events_page_block_idx').on(table.pageId, table.blockId)
 	]
 );
 

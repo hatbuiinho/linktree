@@ -1,7 +1,7 @@
 import { env } from '$env/dynamic/private';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 const MAX_IMAGE_SIZE = 8 * 1024 * 1024;
 const PRESIGN_EXPIRES_SECONDS = 5 * 60;
@@ -96,10 +96,32 @@ export async function presignImageUpload(input: {
 	kind: string;
 	contentType: string;
 	size: number;
+	contentHash?: string;
 }) {
 	const { kind, extension } = validateImageUpload(input.kind, input.contentType, input.size);
 	const cfg = config();
-	const objectKey = `pages/${input.pageId}/${kind}/${randomUUID()}${extension}`;
+	if (input.contentHash && !/^[a-f0-9]{64}$/.test(input.contentHash))
+		throw new Error('Mã kiểm tra file không hợp lệ.');
+	const objectKey = input.contentHash
+		? `assets/sha256/${input.contentHash}${extension}`
+		: `pages/${input.pageId}/${kind}/${randomUUID()}${extension}`;
+	const publicUrl = `${cfg.publicBaseUrl}/${encodeObjectKey(objectKey)}`;
+	if (input.contentHash) {
+		try {
+			await clientFor(cfg).send(new HeadObjectCommand({ Bucket: cfg.bucket, Key: objectKey }));
+			return {
+				bucket: cfg.bucket,
+				object_key: objectKey,
+				upload_url: null,
+				public_url: publicUrl,
+				existing: true,
+				expires_at: new Date().toISOString()
+			};
+		} catch (cause) {
+			const status = (cause as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+			if (status !== 404) throw cause;
+		}
+	}
 	const command = new PutObjectCommand({
 		Bucket: cfg.bucket,
 		Key: objectKey,
@@ -113,9 +135,42 @@ export async function presignImageUpload(input: {
 		bucket: cfg.bucket,
 		object_key: objectKey,
 		upload_url: uploadUrl,
-		public_url: `${cfg.publicBaseUrl}/${encodeObjectKey(objectKey)}`,
+		public_url: publicUrl,
+		existing: false,
 		expires_at: new Date(Date.now() + PRESIGN_EXPIRES_SECONDS * 1000).toISOString()
 	};
+}
+
+/** Stores a vetted image fetched by the server for a link preview. */
+export async function storeLinkPreviewImage(input: {
+	pageId: string;
+	contentType: string;
+	content: Uint8Array;
+}) {
+	const { extension } = validateImageUpload(
+		'block-image',
+		input.contentType,
+		input.content.byteLength
+	);
+	const cfg = config();
+	const contentHash = createHash('sha256').update(input.content).digest('hex');
+	const objectKey = `assets/sha256/${contentHash}${extension}`;
+	try {
+		await clientFor(cfg).send(new HeadObjectCommand({ Bucket: cfg.bucket, Key: objectKey }));
+		return `${cfg.publicBaseUrl}/${encodeObjectKey(objectKey)}`;
+	} catch (cause) {
+		const status = (cause as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+		if (status !== 404) throw cause;
+	}
+	await clientFor(cfg).send(
+		new PutObjectCommand({
+			Bucket: cfg.bucket,
+			Key: objectKey,
+			ContentType: input.contentType,
+			Body: input.content
+		})
+	);
+	return `${cfg.publicBaseUrl}/${encodeObjectKey(objectKey)}`;
 }
 
 export function validateManagedImageUrl(value: string) {
@@ -134,4 +189,28 @@ export function validateManagedImageUrl(value: string) {
 		throw new Error('URL ảnh không thuộc kho MinIO đã cấu hình.');
 	}
 	return url.toString();
+}
+
+function managedObjectKey(value: string) {
+	const cfg = config();
+	const url = new URL(validateManagedImageUrl(value));
+	const base = new URL(`${cfg.publicBaseUrl}/`);
+	const basePath = base.pathname.endsWith('/') ? base.pathname : `${base.pathname}/`;
+	const encodedKey = url.pathname.slice(basePath.length);
+	if (!encodedKey) throw new Error('URL ảnh không chứa object key.');
+	return encodedKey
+		.split('/')
+		.map((part) => decodeURIComponent(part))
+		.join('/');
+}
+
+/** Deletes an image owned by this app. Remote URLs are never accepted. */
+export async function deleteManagedImage(value: string) {
+	const cfg = config();
+	await clientFor(cfg).send(
+		new DeleteObjectCommand({
+			Bucket: cfg.bucket,
+			Key: managedObjectKey(value)
+		})
+	);
 }

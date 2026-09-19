@@ -1,0 +1,1 @@
+ALTER TABLE "pages" ADD COLUMN "logo_source_url" text;

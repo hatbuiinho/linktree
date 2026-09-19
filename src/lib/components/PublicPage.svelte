@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
+	import ResilientImage from '$lib/components/ResilientImage.svelte';
 	import { splitIconRef } from '$lib/icons';
 	import {
 		isPublicRoute,
@@ -11,6 +12,7 @@
 	} from '$lib/navigation';
 	import { OG_RENDER_VERSION } from '$lib/og';
 	import { blockShareSlug } from '$lib/share';
+	import { youtubeEmbedUrl, youtubeWatchUrl } from '$lib/youtube';
 	import type { Block, Page, Theme } from '$lib/server/db/schema';
 
 	type PublicPageData = {
@@ -23,16 +25,24 @@
 		data: PublicPageData;
 		compact?: boolean;
 		onBlockSelect?: (blockId: string) => void;
+		onPageSelect?: () => void;
 	};
 
-	let { data, compact = false, onBlockSelect }: PublicPageProps = $props();
+	let { data, compact = false, onBlockSelect, onPageSelect }: PublicPageProps = $props();
 	let sharingBlock = $state<Block | null>(null);
 	let shareStatus = $state('');
 	let highlightedBlockId = $state<string | null>(null);
+	let activeVideoBlockId = $state<string | null>(null);
+	let visibleBlocks = $derived(data.blocks.filter((block) => block.enabled));
+	let activeVideoBlock = $derived(
+		visibleBlocks.find((block) => block.id === activeVideoBlockId)
+	);
+	let activeVideoUrl = $derived(youtubeEmbedUrl(activeVideoBlock?.url));
+	let videoIframe = $state<HTMLIFrameElement>();
 
 	onMount(() => {
 		const blockId = new URLSearchParams(window.location.search).get('block');
-		if (!blockId || !data.blocks.some((block) => block.id === blockId)) return;
+		if (!blockId || !visibleBlocks.some((block) => block.id === blockId)) return;
 
 		highlightedBlockId = blockId;
 		requestAnimationFrame(() => {
@@ -47,6 +57,36 @@
 		}, 4_000);
 
 		return () => window.clearTimeout(clearHighlight);
+	});
+
+	onMount(() => {
+		const orientation = screen.orientation as unknown as {
+			lock?: (mode: 'landscape') => Promise<void>;
+			unlock?: () => void;
+		};
+		const handleFullscreenChange = () => {
+			const fullscreenElement =
+				document.fullscreenElement ??
+				(document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement;
+			const videoIsFullscreen =
+				fullscreenElement === videoIframe ||
+				(fullscreenElement instanceof HTMLIFrameElement &&
+					fullscreenElement.classList.contains('youtube-embed-frame'));
+			const mobileViewport = window.matchMedia('(max-width: 767px)').matches;
+			if (videoIsFullscreen && mobileViewport) {
+				void orientation.lock?.('landscape').catch(() => undefined);
+			} else if (!fullscreenElement) {
+				orientation.unlock?.();
+			}
+		};
+
+		document.addEventListener('fullscreenchange', handleFullscreenChange);
+		document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+		return () => {
+			document.removeEventListener('fullscreenchange', handleFullscreenChange);
+			document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+			if (!document.fullscreenElement) orientation.unlock?.();
+		};
 	});
 
 	function selectBlock(blockId: string) {
@@ -78,6 +118,7 @@
 	}
 
 	function directHref(block: Block) {
+		if (block.type === 'youtube') return youtubeWatchUrl(block.url);
 		const type = navigationType(block.metadata);
 		if (type === 'external') return block.url;
 		if (type === 'route') {
@@ -101,8 +142,24 @@
 		return typeof metadata.imageUrl === 'string' ? metadata.imageUrl : null;
 	}
 
+	function blockSourceImageUrl(metadata: Record<string, unknown>) {
+		return typeof metadata.sourceImageUrl === 'string' ? metadata.sourceImageUrl : null;
+	}
+
 	function isCardImage(metadata: Record<string, unknown>) {
 		return metadata.imageDisplay === 'card';
+	}
+
+	function youtubeOpenMode(metadata: Record<string, unknown>) {
+		return metadata.youtubeOpenMode === 'external' ? 'external' : 'popup';
+	}
+
+	function youtubeMuted(metadata: Record<string, unknown>) {
+		return metadata.youtubeMuted === true;
+	}
+
+	function youtubeDisplay(metadata: Record<string, unknown>) {
+		return metadata.youtubeDisplay === 'iframe' ? 'iframe' : 'avatar';
 	}
 
 	function shareVersion(block: Block) {
@@ -173,17 +230,32 @@
 		}
 	}
 
-	function youtubeEmbedUrl(value: string | null) {
-		if (!value) return null;
-		try {
-			const url = new URL(value);
-			return url.hostname === 'www.youtube-nocookie.com' &&
-				/^\/embed\/[A-Za-z0-9_-]{11}$/.test(url.pathname)
-				? url.toString()
-				: null;
-		} catch {
-			return null;
+	function openVideo(block: Block, event: MouseEvent) {
+		if (onBlockSelect) {
+			event.preventDefault();
+			selectBlock(block.id);
+			return;
 		}
+		if (youtubeOpenMode(block.metadata) !== 'popup') return;
+		event.preventDefault();
+		trackLink(block.id);
+		activeVideoBlockId = block.id;
+	}
+
+	function closeVideo() {
+		activeVideoBlockId = null;
+	}
+
+	function openVideoDialog(dialog: HTMLDialogElement) {
+		const previousOverflow = document.documentElement.style.overflow;
+		dialog.showModal();
+		document.documentElement.style.overflow = 'hidden';
+		return {
+			destroy() {
+				dialog.close();
+				document.documentElement.style.overflow = previousOverflow;
+			}
+		};
 	}
 
 	let theme = $derived(
@@ -240,8 +312,14 @@
 	let compactButtonIconSize = $derived(
 		Math.max(26, Math.min(58, Math.round((theme.buttonMinHeight || 0) * 0.42)))
 	);
+	let buttonMediaSize = $derived(
+		Math.max(32, Math.min(72, Math.round((theme.buttonMinHeight || 64) - theme.buttonPaddingY * 2)))
+	);
+	let compactButtonMediaSize = $derived(
+		Math.max(26, Math.min(58, Math.round((theme.buttonMinHeight || 56) - theme.buttonPaddingY * 2)))
+	);
 	let shellStyle = $derived(
-		`--page-bg:${background};--page-bg-mobile:${mobileBackground};--button-color:${theme.buttonColor};--button-text:${theme.buttonTextColor};--page-text:${theme.textColor};--button-radius:${theme.buttonRadius}px;--button-padding-x:${theme.buttonPaddingX}px;--button-padding-y:${theme.buttonPaddingY}px;--button-min-height:${theme.buttonMinHeight}px;--button-font-size:${theme.buttonFontSize}px;--button-icon-size:${buttonIconSize}px;--compact-button-icon-size:${compactButtonIconSize}px;--page-font:${theme.fontFamily}`
+		`--page-bg:${background};--page-bg-mobile:${mobileBackground};--button-color:${theme.buttonColor};--button-text:${theme.buttonTextColor};--page-text:${theme.textColor};--button-radius:${theme.buttonRadius}px;--button-padding-x:${theme.buttonPaddingX}px;--button-padding-y:${theme.buttonPaddingY}px;--button-min-height:${theme.buttonMinHeight}px;--button-font-size:${theme.buttonFontSize}px;--button-icon-size:${buttonIconSize}px;--compact-button-icon-size:${compactButtonIconSize}px;--button-media-size:${buttonMediaSize}px;--compact-button-media-size:${compactButtonMediaSize}px;--page-font:${theme.fontFamily}`
 	);
 </script>
 
@@ -257,18 +335,50 @@
 	<div class="page-card">
 		<header class="page-header">
 			{#if data.page.logoUrl}
-				<img class="page-logo" src={data.page.logoUrl} alt={data.page.title} />
+				{#if onPageSelect}
+					<button class="page-select-button" type="button" aria-label="Chỉnh sửa hồ sơ trang" onclick={onPageSelect}>
+						<ResilientImage
+							class="page-logo"
+							primaryUrl={data.page.logoUrl}
+							fallbackUrl={data.page.logoSourceUrl}
+							alt={data.page.title}
+							width="112"
+							height="112"
+							fetchpriority="high"
+							decoding="async"
+						/>
+					</button>
+				{:else}
+					<ResilientImage
+						class="page-logo"
+						primaryUrl={data.page.logoUrl}
+						fallbackUrl={data.page.logoSourceUrl}
+						alt={data.page.title}
+						width="112"
+						height="112"
+						fetchpriority="high"
+						decoding="async"
+					/>
+				{/if}
 			{:else}
-				<div class="page-logo page-logo-placeholder" aria-hidden="true">
-					<span class="icon-[mdi--dharmachakra]"></span>
-				</div>
+				{#if onPageSelect}
+					<button class="page-select-button" type="button" aria-label="Chỉnh sửa hồ sơ trang" onclick={onPageSelect}>
+						<div class="page-logo page-logo-placeholder" aria-hidden="true">
+							<span class="icon-[mdi--dharmachakra]"></span>
+						</div>
+					</button>
+				{:else}
+					<div class="page-logo page-logo-placeholder" aria-hidden="true">
+						<span class="icon-[mdi--dharmachakra]"></span>
+					</div>
+				{/if}
 			{/if}
-			<h1>{data.page.title}</h1>
+			<h1>{#if onPageSelect}<button class="page-select-button" type="button" onclick={onPageSelect}>{data.page.title}</button>{:else}{data.page.title}{/if}</h1>
 			{#if data.page.description}<p>{data.page.description}</p>{/if}
 		</header>
 
 		<section class="blocks" aria-label="Liên kết">
-			{#each data.blocks as block (block.id)}
+			{#each visibleBlocks as block (block.id)}
 				{#if block.type === 'heading'}
 					{#if onBlockSelect}
 						<button
@@ -306,43 +416,66 @@
 					{:else}
 						<hr />
 					{/if}
-				{:else if block.type === 'youtube'}
-					{@const embedUrl = youtubeEmbedUrl(block.url)}
-					{#if embedUrl}
-						<div class="video-block">
-							<iframe
-								src={embedUrl}
-								title={block.title || 'Video YouTube'}
-								allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-								allowfullscreen
-							></iframe>
-						</div>
-					{:else}
-						<div class="video-unavailable">Video YouTube chưa hợp lệ.</div>
-					{/if}
 				{:else}
 					{@const blockIconUrl = iconUrl(block.icon)}
 					{@const imageUrl = blockImageUrl(block.metadata)}
-					{@const cardImage = imageUrl && isCardImage(block.metadata)}
+					{@const sourceImageUrl = blockSourceImageUrl(block.metadata)}
+					{@const displayImageUrl = imageUrl || sourceImageUrl}
+					{@const cardImage = displayImageUrl && isCardImage(block.metadata)}
 					{@const targetType = navigationType(block.metadata)}
 					{@const href = directHref(block)}
 					{@const isAvailable = Boolean(href)}
+					{@const youtubeMode = block.type === 'youtube' ? youtubeOpenMode(block.metadata) : null}
+					{@const inlineYoutubeUrl = block.type === 'youtube' ? youtubeEmbedUrl(block.url) : null}
+					{@const iframeCard = Boolean(
+						inlineYoutubeUrl && youtubeDisplay(block.metadata) === 'iframe'
+					)}
 					<div
 						id={`block-${block.id}`}
-						class:link-card={cardImage}
+						class:link-card={cardImage || iframeCard}
+						class:youtube-iframe-card={iframeCard}
 						class:shared-block-highlight={highlightedBlockId === block.id}
 						class="link-block"
 					>
+						{#if iframeCard && inlineYoutubeUrl}
+							<div class="youtube-card-frame">
+								<iframe
+									class="youtube-embed-frame"
+									src={`${inlineYoutubeUrl}?playsinline=1&rel=0`}
+									title={block.title || 'Video YouTube'}
+									loading="lazy"
+									allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+									allowfullscreen
+								></iframe>
+								{#if onBlockSelect}
+									<button
+										class="youtube-preview-overlay"
+										type="button"
+										aria-label="Chỉnh sửa video YouTube"
+										onclick={() => selectBlock(block.id)}
+									></button>
+								{/if}
+							</div>
+						{/if}
 						<a
 							class:disabled={!isAvailable}
-							class:link-card={cardImage}
-							class:has-image-media={Boolean(imageUrl && !cardImage)}
+							class:link-card={cardImage && !iframeCard}
+							class:youtube-card-copy={iframeCard}
+							class:has-image-media={Boolean(displayImageUrl && !cardImage && !iframeCard)}
 							class="link-button"
 							href={href || undefined}
-							target={targetType === 'external' && block.openNewTab ? '_blank' : undefined}
+							target={(block.type === 'youtube'
+								? youtubeMode === 'external'
+								: targetType === 'external') && block.openNewTab
+								? '_blank'
+								: undefined}
 							rel="external noreferrer"
 							aria-disabled={!isAvailable}
 							onclick={(event) => {
+								if (block.type === 'youtube') {
+									openVideo(block, event);
+									if (youtubeMode === 'popup' || onBlockSelect) return;
+								}
 								if (targetType === 'back') return goBack(block, event);
 								if (onBlockSelect) {
 									event.preventDefault();
@@ -352,17 +485,35 @@
 								trackLink(block.id);
 							}}
 						>
-							{#if imageUrl && cardImage}
-								<img class="link-image card-image" src={imageUrl} alt="" />
-							{:else if imageUrl}
-								<span class="link-media"><img class="link-image" src={imageUrl} alt="" /></span>
-							{:else if blockIconUrl}
+							{#if displayImageUrl && cardImage && !iframeCard}
+								<ResilientImage
+									class="link-image card-image"
+									primaryUrl={imageUrl}
+									fallbackUrl={sourceImageUrl}
+									alt=""
+									loading="lazy"
+									decoding="async"
+								/>
+							{:else if displayImageUrl && !iframeCard}
+								<span class="link-media"
+									><ResilientImage
+										class="link-image"
+										primaryUrl={imageUrl}
+										fallbackUrl={sourceImageUrl}
+										alt=""
+										loading="lazy"
+										decoding="async"
+									/></span
+								>
+							{:else if blockIconUrl && !iframeCard}
 								<span
 									class="link-icon"
 									style={`--icon-image: url("${blockIconUrl}")`}
 									aria-hidden="true"
 								></span>
-							{:else}
+							{:else if block.type === 'youtube' && !iframeCard}
+								<span class="youtube-fallback icon-[mdi--youtube]" aria-hidden="true"></span>
+							{:else if !iframeCard}
 								<span class="link-icon-empty" aria-hidden="true"></span>
 							{/if}
 							<span class="link-copy">
@@ -388,6 +539,30 @@
 		</section>
 	</div>
 </main>
+
+{#if activeVideoBlock && activeVideoUrl}
+	<dialog
+		class="video-dialog"
+		aria-label={activeVideoBlock.title || 'Video YouTube'}
+		use:openVideoDialog
+		onclose={closeVideo}
+		onclick={(event) => event.target === event.currentTarget && closeVideo()}
+	>
+		<div class="video-dialog-heading">
+			<h2>{activeVideoBlock.title || 'Video YouTube'}</h2>
+			<button type="button" aria-label="Đóng video" onclick={closeVideo}>×</button>
+		</div>
+		<div class="video-frame">
+			<iframe
+				bind:this={videoIframe}
+				src={`${activeVideoUrl}?autoplay=1&playsinline=1&mute=${youtubeMuted(activeVideoBlock.metadata) ? 1 : 0}`}
+				title={activeVideoBlock.title || 'Video YouTube'}
+				allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+				allowfullscreen
+			></iframe>
+		</div>
+	</dialog>
+{/if}
 
 {#if sharingBlock}
 	<div class="share-backdrop">
@@ -426,8 +601,8 @@
 {/if}
 
 <style>
-	body,
-	html {
+	:global(body),
+	:global(html) {
 		overscroll-behavior: none;
 	}
 
@@ -517,7 +692,17 @@
 		margin-bottom: 36px;
 	}
 
-	.page-logo {
+	.page-select-button {
+		display: contents;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+	}
+
+	:global(.page-logo) {
 		width: 112px;
 		height: 112px;
 		border-radius: 50%;
@@ -652,27 +837,39 @@
 		height: 26px;
 	}
 
-	.link-image {
+	.youtube-fallback {
+		display: grid;
+		place-items: center;
+		width: var(--button-icon-size);
+		height: var(--button-icon-size);
+		color: #ef4444;
+		font-size: var(--button-icon-size);
+	}
+
+	:global(.link-image) {
 		display: block;
 		width: 100%;
 		height: 100%;
-		object-fit: contain;
+		object-fit: cover;
 		object-position: center;
-		border-radius: var(--button-radius);
+		border-radius: inherit;
 	}
 
 	.link-media {
 		display: flex;
 		flex: 0 0 auto;
-		align-self: stretch;
+		align-self: center;
+		width: var(--button-media-size);
+		height: var(--button-media-size);
+		aspect-ratio: 1 / 1;
+		overflow: hidden;
+		border-radius: max(0px, calc(var(--button-radius) - var(--button-padding-y)));
 	}
 
-	.link-media .link-image {
-		width: auto;
-		max-width: 72px;
+	.link-media :global(.link-image) {
+		width: 100%;
 		height: 100%;
-		max-height: 100%;
-		object-fit: contain;
+		object-fit: cover;
 	}
 
 	.link-button.link-card {
@@ -682,7 +879,7 @@
 		overflow: hidden;
 	}
 
-	.link-image.card-image {
+	:global(.link-image.card-image) {
 		display: block;
 		width: 100%;
 		height: auto;
@@ -690,6 +887,52 @@
 		border: 0;
 		border-radius: var(--button-radius) var(--button-radius) 0 0;
 		background: rgb(15 23 42 / 0.06);
+	}
+
+	.youtube-iframe-card {
+		overflow: hidden;
+		border-radius: var(--button-radius);
+		background: var(--button-color);
+		color: var(--button-text);
+		box-shadow: 0 8px 22px rgb(15 23 42 / 0.06);
+	}
+
+	.youtube-card-frame {
+		position: relative;
+		width: 100%;
+		aspect-ratio: 16 / 9;
+		background: black;
+	}
+
+	.youtube-card-frame iframe {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		border: 0;
+	}
+
+	.youtube-preview-overlay {
+		position: absolute;
+		z-index: 1;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		cursor: pointer;
+	}
+
+	.link-button.youtube-card-copy {
+		grid-template-columns: minmax(0, 1fr) 28px;
+		border-radius: 0;
+		box-shadow: none;
+	}
+
+	.link-button.youtube-card-copy[href]:hover {
+		transform: none;
+		box-shadow: inset 0 0 0 999px rgb(255 255 255 / 0.05);
 	}
 
 	.link-card .link-copy {
@@ -943,29 +1186,87 @@
 		margin: 17px 0 2px;
 	}
 
-	.video-block {
+	.video-dialog {
+		width: min(920px, calc(100vw - 28px));
+		max-width: none;
+		margin: auto;
+		padding: 0;
+		border: 0;
+		border-radius: 18px;
+		overflow: hidden;
+		background: #0f172a;
+		color: white;
+		box-shadow: 0 24px 80px rgb(0 0 0 / 0.45);
+	}
+
+	.video-dialog::backdrop {
+		background: rgb(2 6 23 / 0.82);
+		backdrop-filter: blur(4px);
+	}
+
+	.video-dialog-heading {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		padding: 12px 16px;
+	}
+
+	.video-dialog-heading h2 {
+		margin: 0;
+		font-size: 0.95rem;
+		font-weight: 700;
+		overflow-wrap: anywhere;
+	}
+
+	.video-dialog-heading button {
+		width: 38px;
+		height: 38px;
+		padding: 0;
+		border: 0;
+		border-radius: 50%;
+		background: #334155;
+		color: white;
+		font-size: 1.5rem;
+		cursor: pointer;
+	}
+
+	.video-frame {
 		position: relative;
 		width: 100%;
 		aspect-ratio: 16 / 9;
-		overflow: hidden;
-		border-radius: var(--button-radius);
-		background: rgb(15 23 42 / 0.12);
-		box-shadow: 0 8px 22px rgb(15 23 42 / 0.06);
+		background: black;
 	}
 
-	.video-block iframe {
+	.video-frame iframe {
 		position: absolute;
+		inset: 0;
 		width: 100%;
 		height: 100%;
 		border: 0;
 	}
 
-	.video-unavailable {
-		padding: 18px;
-		border-radius: var(--button-radius);
-		background: rgb(15 23 42 / 0.08);
-		text-align: center;
-		font-size: 0.86rem;
+	.video-frame iframe:fullscreen,
+	.video-frame iframe:-webkit-full-screen,
+	.youtube-card-frame iframe:fullscreen,
+	.youtube-card-frame iframe:-webkit-full-screen {
+		position: fixed !important;
+		inset: 0 !important;
+		width: 100dvw !important;
+		height: 100dvh !important;
+		max-width: none !important;
+		max-height: none !important;
+		aspect-ratio: auto !important;
+		object-fit: contain;
+		background: black;
+	}
+
+	@media (max-width: 560px) {
+		.video-dialog {
+			width: 100vw;
+			max-height: 100dvh;
+			border-radius: 0;
+		}
 	}
 
 	hr {
@@ -1004,7 +1305,7 @@
 		box-shadow: none;
 	}
 
-	.compact .page-logo {
+	.compact :global(.page-logo) {
 		width: 76px;
 		height: 76px;
 		margin-bottom: 14px;
@@ -1031,6 +1332,10 @@
 		font-size: 0.86rem;
 	}
 
+	.compact .link-button.youtube-card-copy {
+		grid-template-columns: minmax(0, 1fr) 20px;
+	}
+
 	.compact .link-button.has-image-media {
 		gap: 10px;
 	}
@@ -1044,7 +1349,12 @@
 		height: var(--compact-button-icon-size);
 	}
 
-	.compact .link-image.card-image {
+	.compact .link-media {
+		width: var(--compact-button-media-size);
+		height: var(--compact-button-media-size);
+	}
+
+	.compact :global(.link-image.card-image) {
 		width: 100%;
 		height: auto;
 	}
@@ -1058,7 +1368,7 @@
 			padding-top: 48px;
 		}
 
-		.page-logo {
+		:global(.page-logo) {
 			width: 92px;
 			height: 92px;
 		}

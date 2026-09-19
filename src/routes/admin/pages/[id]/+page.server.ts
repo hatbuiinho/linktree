@@ -3,7 +3,10 @@ import { blocks, clickEvents, pages, themes } from '$lib/server/db/schema';
 import { isPublicRoute, navigationType, navigationTypes, navigationValue } from '$lib/navigation';
 import { createShareCode } from '$lib/server/share-code';
 import { uniqueSlug } from '$lib/server/page-service';
+import { deleteManagedImageIfUnreferenced } from '$lib/server/image-cleanup';
+import { assertPublicHttpUrl } from '$lib/server/link-preview';
 import { validateManagedImageUrl } from '$lib/server/uploads';
+import { youtubeWatchUrl } from '$lib/youtube';
 import { and, asc, count, eq, max } from 'drizzle-orm';
 import { error, fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
@@ -34,28 +37,27 @@ function cleanUrl(value: FormDataEntryValue | null) {
 	return url;
 }
 
-function cleanYouTubeUrl(value: FormDataEntryValue | null) {
+async function cleanSourceImageUrl(value: FormDataEntryValue | null) {
 	const raw = String(value || '').trim();
 	if (!raw) return null;
-
 	let url: URL;
 	try {
 		url = new URL(raw);
 	} catch {
-		throw new Error('URL YouTube không hợp lệ.');
+		throw new Error('URL ảnh nguồn không hợp lệ.');
 	}
+	if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password)
+		throw new Error('URL ảnh nguồn không hợp lệ.');
+	return (await assertPublicHttpUrl(url.toString())).toString();
+}
 
-	const host = url.hostname.replace(/^www\./, '').toLowerCase();
-	const id =
-		host === 'youtu.be'
-			? url.pathname.slice(1).split('/')[0]
-			: host === 'youtube.com' || host === 'm.youtube.com'
-				? url.pathname.startsWith('/embed/')
-					? url.pathname.split('/')[2]
-					: url.searchParams.get('v')
-				: null;
-	if (!id || !/^[A-Za-z0-9_-]{11}$/.test(id)) throw new Error('URL YouTube không hợp lệ.');
-	return `https://www.youtube-nocookie.com/embed/${id}`;
+function cleanYouTubeUrl(value: FormDataEntryValue | null) {
+	const raw = String(value || '').trim();
+	if (!raw) return null;
+
+	const watchUrl = youtubeWatchUrl(raw);
+	if (!watchUrl) throw new Error('URL YouTube không hợp lệ.');
+	return watchUrl;
 }
 
 async function ownedBlock(pageId: string, blockId: string) {
@@ -68,35 +70,48 @@ async function ownedBlock(pageId: string, blockId: string) {
 }
 
 export const load: PageServerLoad = async ({ params }) => {
-	const [page] = await db.select().from(pages).where(eq(pages.id, params.id)).limit(1);
+	const [pageRows, themeRows, pageBlocks, linkablePages, blockClicks, assetPages, assetBlocks] = await Promise.all([
+		db.select().from(pages).where(eq(pages.id, params.id)).limit(1),
+		db.select().from(themes).where(eq(themes.pageId, params.id)).limit(1),
+		db.select().from(blocks).where(eq(blocks.pageId, params.id)).orderBy(asc(blocks.position)),
+		db
+			.select({ id: pages.id, title: pages.title, slug: pages.slug, isHome: pages.isHome })
+			.from(pages)
+			.where(eq(pages.status, 'published'))
+			.orderBy(asc(pages.title)),
+		db
+			.select({ blockId: clickEvents.blockId, total: count() })
+			.from(clickEvents)
+			.where(eq(clickEvents.pageId, params.id))
+			.groupBy(clickEvents.blockId),
+		db.select({ imageUrl: pages.logoUrl, sourceImageUrl: pages.logoSourceUrl }).from(pages),
+		db.select({ metadata: blocks.metadata }).from(blocks)
+	]);
+	const [page] = pageRows;
 	if (!page) throw error(404, 'Không tìm thấy trang.');
 
-	const [theme] = await db.select().from(themes).where(eq(themes.pageId, page.id)).limit(1);
-	const pageBlocks = await db
-		.select()
-		.from(blocks)
-		.where(eq(blocks.pageId, page.id))
-		.orderBy(asc(blocks.position));
-	const linkablePages = await db
-		.select({ id: pages.id, title: pages.title, slug: pages.slug, isHome: pages.isHome })
-		.from(pages)
-		.where(eq(pages.status, 'published'))
-		.orderBy(asc(pages.title));
-	const blockClicks = await db
-		.select({ blockId: clickEvents.blockId, total: count() })
-		.from(clickEvents)
-		.where(eq(clickEvents.pageId, page.id))
-		.groupBy(clickEvents.blockId);
-	const [total] = await db
-		.select({ total: count() })
-		.from(clickEvents)
-		.where(eq(clickEvents.pageId, page.id));
+	const [theme] = themeRows;
 	const clickMap = new Map(blockClicks.map((row) => [row.blockId, row.total]));
+	const totalClicks = blockClicks.reduce((total, row) => total + row.total, 0);
 	const targetPaths = new Map(
 		linkablePages.map((target) => [
 			target.id,
 			target.isHome ? '/' : `/p/${encodeURIComponent(target.slug)}`
 		])
+	);
+	const imageLibrary = [
+		...assetPages,
+		...assetBlocks.map(({ metadata }) => ({
+			imageUrl: typeof metadata.imageUrl === 'string' ? metadata.imageUrl : null,
+			sourceImageUrl: typeof metadata.sourceImageUrl === 'string' ? metadata.sourceImageUrl : null
+		}))
+	].filter(
+		(value, index, values) =>
+			Boolean(value.imageUrl || value.sourceImageUrl) &&
+			values.findIndex(
+				(candidate) =>
+					candidate.imageUrl === value.imageUrl && candidate.sourceImageUrl === value.sourceImageUrl
+			) === index
 	);
 
 	return {
@@ -114,7 +129,8 @@ export const load: PageServerLoad = async ({ params }) => {
 			};
 		}),
 		linkablePages,
-		totalClicks: total?.total ?? 0
+		imageLibrary,
+		totalClicks
 	};
 };
 
@@ -147,6 +163,7 @@ export const actions: Actions = {
 		const buttonPaddingY = boundedInteger(form.get('buttonPaddingY'), 10, 0, 48);
 		const buttonMinHeight = boundedInteger(form.get('buttonMinHeight'), 0, 0, 180);
 		const buttonFontSize = boundedInteger(form.get('buttonFontSize'), 16, 12, 32);
+		const backgroundValue = String(form.get('backgroundValue') || '#ffffff').trim();
 		const backgroundMobileValue = String(form.get('backgroundMobileValue') || '').trim();
 		const overlayColor = String(form.get('backgroundOverlayColor') || '#0f172a').trim();
 		if (!/^#[0-9a-f]{6}$/i.test(overlayColor))
@@ -154,18 +171,26 @@ export const actions: Actions = {
 
 		try {
 			if (backgroundType === 'image') {
-				validateManagedImageUrl(String(form.get('backgroundValue') || '').trim());
+				validateManagedImageUrl(backgroundValue);
 				if (backgroundMobileValue) validateManagedImageUrl(backgroundMobileValue);
 			}
 		} catch (cause) {
 			return fail(400, { error: cause instanceof Error ? cause.message : 'Ảnh nền không hợp lệ.' });
 		}
 
+		const [previousTheme] = await db
+			.select({
+				backgroundValue: themes.backgroundValue,
+				backgroundMobileValue: themes.backgroundMobileValue
+			})
+			.from(themes)
+			.where(eq(themes.pageId, params.id))
+			.limit(1);
 		await db
 			.update(themes)
 			.set({
 				backgroundType: backgroundType as 'color' | 'gradient' | 'image',
-				backgroundValue: String(form.get('backgroundValue') || '#ffffff').trim(),
+				backgroundValue,
 				backgroundMobileValue: backgroundMobileValue || null,
 				backgroundFocalX: boundedInteger(form.get('backgroundFocalX'), 50, 0, 100),
 				backgroundFocalY: boundedInteger(form.get('backgroundFocalY'), 50, 0, 100),
@@ -182,6 +207,10 @@ export const actions: Actions = {
 				fontFamily: String(form.get('fontFamily') || 'system-ui').trim() || 'system-ui'
 			})
 			.where(eq(themes.pageId, params.id));
+		if (previousTheme?.backgroundValue !== backgroundValue)
+			await deleteManagedImageIfUnreferenced(previousTheme?.backgroundValue);
+		if (previousTheme?.backgroundMobileValue !== (backgroundMobileValue || null))
+			await deleteManagedImageIfUnreferenced(previousTheme?.backgroundMobileValue);
 		return { success: true, message: 'Đã lưu giao diện.' };
 	},
 
@@ -221,12 +250,20 @@ export const actions: Actions = {
 
 		try {
 			let metadata = block.metadata;
+			const previousImageUrl =
+				typeof block.metadata.imageUrl === 'string' ? block.metadata.imageUrl : null;
 			let url: string | null = null;
-			if (block.type === 'link' && form.has('imageUrl')) {
+			if ((block.type === 'link' || block.type === 'youtube') && form.has('imageUrl')) {
 				const imageUrl = String(form.get('imageUrl') || '').trim();
 				const rest = { ...block.metadata };
 				delete rest.imageUrl;
-				metadata = imageUrl ? { ...rest, imageUrl: validateManagedImageUrl(imageUrl) } : rest;
+				delete rest.sourceImageUrl;
+				const sourceImageUrl = await cleanSourceImageUrl(form.get('sourceImageUrl'));
+				metadata = {
+					...rest,
+					...(imageUrl ? { imageUrl: validateManagedImageUrl(imageUrl) } : {}),
+					...(sourceImageUrl ? { sourceImageUrl } : {})
+				};
 			}
 			if (block.type === 'link' && form.has('imageDisplay')) {
 				metadata = {
@@ -263,6 +300,12 @@ export const actions: Actions = {
 				};
 			} else if (block.type === 'youtube') {
 				url = cleanYouTubeUrl(form.get('url'));
+				metadata = {
+					...metadata,
+					youtubeOpenMode: form.get('youtubeOpenMode') === 'external' ? 'external' : 'popup',
+					youtubeMuted: form.get('youtubeMuted') === 'true',
+					youtubeDisplay: form.get('youtubeDisplay') === 'iframe' ? 'iframe' : 'avatar'
+				};
 			}
 			await db
 				.update(blocks)
@@ -276,10 +319,25 @@ export const actions: Actions = {
 					openNewTab: asBoolean(form.get('openNewTab'))
 				})
 				.where(eq(blocks.id, blockId));
+			const nextImageUrl = typeof metadata.imageUrl === 'string' ? metadata.imageUrl : null;
+			if (previousImageUrl && previousImageUrl !== nextImageUrl)
+				await deleteManagedImageIfUnreferenced(previousImageUrl);
 			return { success: true, message: 'Đã cập nhật block.' };
 		} catch (cause) {
 			return fail(400, { error: cause instanceof Error ? cause.message : 'Không thể lưu block.' });
 		}
+	},
+
+	toggleBlock: async ({ params, request }) => {
+		const form = await request.formData();
+		const blockId = String(form.get('blockId') || '');
+		const block = await ownedBlock(params.id, blockId);
+		if (!block) return fail(404, { error: 'Không tìm thấy block.' });
+
+		const enabled = asBoolean(form.get('enabled'));
+		await db.update(blocks).set({ enabled }).where(eq(blocks.id, blockId));
+
+		return { success: true, message: enabled ? 'Đã hiện block.' : 'Đã ẩn block.' };
 	},
 
 	deleteBlock: async ({ params, request }) => {
@@ -288,6 +346,7 @@ export const actions: Actions = {
 		const block = await ownedBlock(params.id, blockId);
 		if (!block) return fail(404, { error: 'Không tìm thấy block.' });
 		await db.delete(blocks).where(eq(blocks.id, blockId));
+		await deleteManagedImageIfUnreferenced(block.metadata.imageUrl);
 		return { success: true, message: 'Đã xóa block.', deletedBlockId: blockId };
 	},
 
@@ -295,15 +354,41 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const kind = String(form.get('kind') || '');
 		const value = String(form.get('url') || '').trim();
-		if (!value) return fail(400, { error: 'URL ảnh không hợp lệ.' });
+		let sourceUrl: string | null;
+		try {
+			sourceUrl = await cleanSourceImageUrl(form.get('sourceUrl'));
+		} catch (cause) {
+			return fail(400, { error: cause instanceof Error ? cause.message : 'URL ảnh không hợp lệ.' });
+		}
+		if (!value && !sourceUrl && form.get('remove') !== 'true')
+			return fail(400, { error: 'URL ảnh không hợp lệ.' });
 
 		try {
-			const url = validateManagedImageUrl(value);
+			const url = value ? validateManagedImageUrl(value) : null;
 			if (kind === 'logo') {
-				await db.update(pages).set({ logoUrl: url }).where(eq(pages.id, params.id));
+				const [currentPage] = await db
+					.select({ logoUrl: pages.logoUrl })
+					.from(pages)
+					.where(eq(pages.id, params.id))
+					.limit(1);
+				await db
+					.update(pages)
+					.set({ logoUrl: url, logoSourceUrl: sourceUrl })
+					.where(eq(pages.id, params.id));
+				if (currentPage?.logoUrl && currentPage.logoUrl !== url)
+					await deleteManagedImageIfUnreferenced(currentPage.logoUrl);
 			} else if (kind === 'background') {
+				if (!url) return fail(400, { error: 'URL ảnh nền không hợp lệ.' });
 				const mobileUrl = String(form.get('mobileUrl') || '').trim();
 				const backgroundMobileValue = mobileUrl ? validateManagedImageUrl(mobileUrl) : null;
+				const [currentTheme] = await db
+					.select({
+						backgroundValue: themes.backgroundValue,
+						backgroundMobileValue: themes.backgroundMobileValue
+					})
+					.from(themes)
+					.where(eq(themes.pageId, params.id))
+					.limit(1);
 				await db
 					.update(themes)
 					.set({
@@ -312,15 +397,28 @@ export const actions: Actions = {
 						backgroundMobileValue
 					})
 					.where(eq(themes.pageId, params.id));
+				if (currentTheme?.backgroundValue && currentTheme.backgroundValue !== url)
+					await deleteManagedImageIfUnreferenced(currentTheme.backgroundValue);
+				if (
+					currentTheme?.backgroundMobileValue &&
+					currentTheme.backgroundMobileValue !== backgroundMobileValue
+				)
+					await deleteManagedImageIfUnreferenced(currentTheme.backgroundMobileValue);
 			} else if (kind === 'block-image') {
 				const blockId = String(form.get('blockId') || '');
 				const block = await ownedBlock(params.id, blockId);
-				if (!block || block.type !== 'link')
+				if (!block || (block.type !== 'link' && block.type !== 'youtube'))
 					return fail(404, { error: 'Không tìm thấy block liên kết.' });
-				await db
-					.update(blocks)
-					.set({ metadata: { ...block.metadata, imageUrl: url } })
-					.where(eq(blocks.id, block.id));
+				const previousImageUrl =
+					typeof block.metadata.imageUrl === 'string' ? block.metadata.imageUrl : null;
+				const metadata: Record<string, unknown> = { ...block.metadata };
+				if (url) metadata.imageUrl = url;
+				else delete metadata.imageUrl;
+				if (sourceUrl) metadata.sourceImageUrl = sourceUrl;
+				else delete metadata.sourceImageUrl;
+				await db.update(blocks).set({ metadata }).where(eq(blocks.id, block.id));
+				if (previousImageUrl && previousImageUrl !== url)
+					await deleteManagedImageIfUnreferenced(previousImageUrl);
 			} else {
 				return fail(400, { error: 'Loại ảnh không hợp lệ.' });
 			}

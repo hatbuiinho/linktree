@@ -64,6 +64,20 @@
       "when": 1789725477683,
       "tag": "0008_soft_killmonger",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789786840062,
+      "tag": "0009_database-performance-indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789832414793,
+      "tag": "0010_image_source_fallback",
+      "breakpoints": true
     }
   ]
 }

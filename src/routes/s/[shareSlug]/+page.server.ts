@@ -28,6 +28,10 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		ogImageUrl,
 		goUrl: `/go/${row.block.id}`,
 		previewImage:
-			typeof row.block.metadata.imageUrl === 'string' ? row.block.metadata.imageUrl : null
+			typeof row.block.metadata.imageUrl === 'string'
+				? row.block.metadata.imageUrl
+				: typeof row.block.metadata.sourceImageUrl === 'string'
+					? row.block.metadata.sourceImageUrl
+					: null
 	};
 };

@@ -15,6 +15,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			.toLowerCase();
 		const kind = String(payload.kind || '').trim();
 		const size = Number(payload.size);
+		const contentHash = String(payload.content_hash || '').trim().toLowerCase();
 
 		if (!pageId || !fileName || fileName.length > 255) {
 			return json({ error: 'Thông tin file không hợp lệ.' }, { status: 400 });
@@ -27,7 +28,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			.limit(1);
 		if (!page) return json({ error: 'Không tìm thấy trang.' }, { status: 404 });
 
-		const result = await presignImageUpload({ pageId, kind, contentType, size });
+		const result = await presignImageUpload({ pageId, kind, contentType, size, contentHash });
 		return json(result);
 	} catch (cause) {
 		const message = cause instanceof Error ? cause.message : 'Không thể chuẩn bị tải ảnh.';

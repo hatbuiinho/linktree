@@ -28,10 +28,15 @@ export async function getPublicPage(where: 'home' | string) {
 			? and(eq(pages.isHome, true), eq(pages.status, 'published'))
 			: and(eq(pages.slug, where), eq(pages.status, 'published'));
 
-	const [page] = await db.select().from(pages).where(condition).limit(1);
-	if (!page) return null;
+	const [pageRow] = await db
+		.select({ page: pages, theme: themes })
+		.from(pages)
+		.leftJoin(themes, eq(themes.pageId, pages.id))
+		.where(condition)
+		.limit(1);
+	if (!pageRow) return null;
 
-	const [theme] = await db.select().from(themes).where(eq(themes.pageId, page.id)).limit(1);
+	const { page, theme } = pageRow;
 	const pageBlocks = await db
 		.select()
 		.from(blocks)

@@ -1,17 +1,20 @@
 import { db } from '$lib/server/db';
 import { blocks, clickEvents, pages, themes } from '$lib/server/db/schema';
 import { createShareCode } from '$lib/server/share-code';
+import { deleteManagedImagesIfUnreferenced } from '$lib/server/image-cleanup';
 import { uniqueSlug } from '$lib/server/page-service';
 import { asc, count, desc, eq } from 'drizzle-orm';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
-	const pageRows = await db.select().from(pages).orderBy(desc(pages.isHome), asc(pages.createdAt));
-	const clickRows = await db
-		.select({ pageId: clickEvents.pageId, total: count() })
-		.from(clickEvents)
-		.groupBy(clickEvents.pageId);
+	const [pageRows, clickRows] = await Promise.all([
+		db.select().from(pages).orderBy(desc(pages.isHome), asc(pages.createdAt)),
+		db
+			.select({ pageId: clickEvents.pageId, total: count() })
+			.from(clickEvents)
+			.groupBy(clickEvents.pageId)
+	]);
 	const clicks = new Map(clickRows.map((row) => [row.pageId, row.total]));
 
 	return {
@@ -51,7 +54,8 @@ export const actions: Actions = {
 					slug,
 					title: `${source.title} (bản sao)`,
 					description: source.description,
-					logoUrl: source.logoUrl,
+						logoUrl: source.logoUrl,
+						logoSourceUrl: source.logoSourceUrl,
 					status: 'draft',
 					isHome: false
 				})
@@ -119,7 +123,17 @@ export const actions: Actions = {
 		const [page] = await db.select().from(pages).where(eq(pages.id, id)).limit(1);
 		if (!page) return fail(404, { error: 'Không tìm thấy trang.' });
 		if (page.isHome) return fail(400, { error: 'Không thể xóa trang chính.' });
+		const [pageThemes, pageBlocks] = await Promise.all([
+			db.select().from(themes).where(eq(themes.pageId, id)),
+			db.select({ metadata: blocks.metadata }).from(blocks).where(eq(blocks.pageId, id))
+		]);
+		const managedImages = [
+			page.logoUrl,
+			...pageThemes.flatMap((theme) => [theme.backgroundValue, theme.backgroundMobileValue]),
+			...pageBlocks.map(({ metadata }) => metadata.imageUrl)
+		];
 		await db.delete(pages).where(eq(pages.id, id));
+		await deleteManagedImagesIfUnreferenced(managedImages);
 		return { success: true };
 	}
 };

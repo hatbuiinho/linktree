@@ -29,3 +29,97 @@ textarea,
 select {
 	font: inherit;
 }
+
+.route-progress {
+	position: fixed;
+	top: 0;
+	right: 0;
+	left: 0;
+	z-index: 10000;
+	height: 3px;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.route-progress span {
+	display: block;
+	width: 45%;
+	height: 100%;
+	border-radius: 0 999px 999px 0;
+	background: linear-gradient(90deg, #7c3aed, #a855f7, #06b6d4);
+	box-shadow: 0 0 12px rgb(124 58 237 / 0.5);
+	animation: route-progress 0.9s ease-in-out infinite;
+}
+
+button.app-loading,
+button[aria-busy='true'] {
+	position: relative;
+	cursor: wait;
+	color: transparent !important;
+	text-shadow: none !important;
+	pointer-events: none;
+}
+
+button.app-loading::after,
+button[aria-busy='true']::after {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 1rem;
+	height: 1rem;
+	margin: -0.5rem 0 0 -0.5rem;
+	border: 2px solid rgb(124 58 237 / 0.25);
+	border-top-color: var(--loading-color, #6d28d9);
+	border-radius: 50%;
+	content: '';
+	animation: button-spinner 0.65s linear infinite;
+}
+
+button.primary.app-loading,
+button.primary[aria-busy='true'],
+button.primary-add.app-loading,
+button.primary-add[aria-busy='true'],
+button.save.app-loading,
+button.save[aria-busy='true'] {
+	--loading-color: #ffffff;
+}
+
+button.primary.app-loading::after,
+button.primary[aria-busy='true']::after,
+button.primary-add.app-loading::after,
+button.primary-add[aria-busy='true']::after,
+button.save.app-loading::after,
+button.save[aria-busy='true']::after {
+	border-color: rgb(255 255 255 / 0.35);
+	border-top-color: var(--loading-color);
+}
+
+@keyframes route-progress {
+	0% {
+		transform: translateX(-110%);
+	}
+	55% {
+		width: 55%;
+	}
+	100% {
+		transform: translateX(230%);
+	}
+}
+
+@keyframes button-spinner {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.route-progress span {
+		width: 75%;
+		animation-duration: 2s;
+	}
+
+	button.app-loading::after,
+	button[aria-busy='true']::after {
+		animation-duration: 1.4s;
+	}
+}
